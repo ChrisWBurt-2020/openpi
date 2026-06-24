@@ -160,7 +160,7 @@ export function useAppFileManager(options: UseAppFileManagerOptions) {
   }
 
   const openCommitDiff = (hash: string, path: string, allFiles: string[]) => {
-    void window.openpi.git.getCommitDiff(hash, path).then((diff) => {
+    void window.openpi.git.getCommitDiff(hash, path, options.cwd()).then((diff) => {
       if (!diff) return
       const filesArray: GitChangedFile[] = allFiles.map((filePath) => ({
         path: filePath,
@@ -186,8 +186,8 @@ export function useAppFileManager(options: UseAppFileManagerOptions) {
     if (!file) return
     const hash = commitDiffHash()
     const diff = hash
-      ? await window.openpi.git.getCommitDiff(hash, file.path)
-      : await window.openpi.git.getDiff(file.path)
+      ? await window.openpi.git.getCommitDiff(hash, file.path, options.cwd())
+      : await window.openpi.git.getDiff(file.path, options.cwd())
     if (diff) {
       batch(() => {
         setActiveDiff(diff)

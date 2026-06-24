@@ -807,7 +807,12 @@ export const gitFileDiffSchema = z.object({
 })
 export type GitFileDiff = z.infer<typeof gitFileDiffSchema>
 
-export const gitDiffRequestSchema = z.object({ path: z.string() })
+    export const gitDiffRequestSchema = z.object({
+      path: z.string(),
+      cwd: z.string().optional(),
+      scope: z.enum(['unstaged', 'staged', 'branch', 'auto']).optional(),
+      baseBranch: z.string().optional(),
+    })
 export type GitDiffRequest = z.infer<typeof gitDiffRequestSchema>
 
 export const gitStageSchema = z.object({ path: z.string() })
@@ -828,6 +833,32 @@ export type GitCommitRequest = z.infer<typeof gitCommitSchema>
 
 export const gitDiscardSchema = z.object({ path: z.string() })
 export type GitDiscardRequest = z.infer<typeof gitDiscardSchema>
+
+// ─── Phase 3: Scoped diffs & hunk operations ────────────────────────────────
+
+export const gitStagedDiffRequestSchema = z
+  .object({ cwd: z.string().optional() })
+  .optional()
+  .default({})
+export type GitStagedDiffRequest = z.infer<typeof gitStagedDiffRequestSchema>
+
+export const gitBranchDiffRequestSchema = z.object({
+  baseBranch: z.string().optional(),
+  cwd: z.string().optional(),
+})
+export type GitBranchDiffRequest = z.infer<typeof gitBranchDiffRequestSchema>
+
+export const gitBranchBaseResultSchema = z.object({
+  base: z.string(),
+})
+export type GitBranchBaseResult = z.infer<typeof gitBranchBaseResultSchema>
+
+export const gitHunkActionSchema = z.object({
+  path: z.string().min(1),
+  hunkPatch: z.string().min(1),
+  cwd: z.string().optional(),
+})
+export type GitHunkActionRequest = z.infer<typeof gitHunkActionSchema>
 
 export const gitSyncActionSchema = z.enum(['fetch', 'pull', 'pull-rebase', 'push'])
 export type GitSyncAction = z.infer<typeof gitSyncActionSchema>
@@ -984,6 +1015,7 @@ export type GitHistoryResult = z.infer<typeof gitHistoryResultSchema>
 export const gitCommitDiffRequestSchema = z.object({
   hash: z.string().min(1),
   path: z.string().optional(),
+  cwd: z.string().optional(),
 })
 export type GitCommitDiffRequest = z.infer<typeof gitCommitDiffRequestSchema>
 
@@ -1053,39 +1085,49 @@ export type FileContentHit = z.infer<typeof fileContentHitSchema>
 export const readFileRequestSchema = z.object({
   /** Path relative to workspace cwd — validated against cwd in Electron main */
   path: z.string().min(1),
+  /** Optional workspace cwd override; falls back to threadCwdRegistry when omitted */
+  cwd: z.string().optional(),
 })
 export type ReadFileRequest = z.infer<typeof readFileRequestSchema>
 
-export const writeFileRequestSchema = z.object({
-  /** Path relative to workspace cwd — validated against cwd in Electron main */
-  path: z.string().min(1),
-  content: z.string(),
-})
-export type WriteFileRequest = z.infer<typeof writeFileRequestSchema>
+    export const writeFileRequestSchema = z.object({
+      /** Path relative to workspace cwd — validated against cwd in Electron main */
+      path: z.string().min(1),
+      content: z.string(),
+      /** Optional workspace cwd override; falls back to threadCwdRegistry when omitted */
+      cwd: z.string().optional(),
+    })
+    export type WriteFileRequest = z.infer<typeof writeFileRequestSchema>
 
-export const deleteFileRequestSchema = z.object({
-  /** Path relative to workspace cwd — validated against cwd in Electron main */
-  path: z.string().min(1),
-})
-export type DeleteFileRequest = z.infer<typeof deleteFileRequestSchema>
+    export const deleteFileRequestSchema = z.object({
+      /** Path relative to workspace cwd — validated against cwd in Electron main */
+      path: z.string().min(1),
+      /** Optional workspace cwd override; falls back to threadCwdRegistry when omitted */
+      cwd: z.string().optional(),
+    })
+    export type DeleteFileRequest = z.infer<typeof deleteFileRequestSchema>
 
-export const renameFileRequestSchema = z.object({
-  /** Path relative to workspace cwd */
-  path: z.string().min(1),
-  newName: z.string().min(1).max(255),
-})
-export type RenameFileRequest = z.infer<typeof renameFileRequestSchema>
+    export const renameFileRequestSchema = z.object({
+      /** Path relative to workspace cwd */
+      path: z.string().min(1),
+      newName: z.string().min(1).max(255),
+      /** Optional workspace cwd override; falls back to threadCwdRegistry when omitted */
+      cwd: z.string().optional(),
+    })
+    export type RenameFileRequest = z.infer<typeof renameFileRequestSchema>
 
-export const copyFileRequestSchema = z.object({
-  /** Source path relative to workspace cwd */
-  path: z.string().min(1),
-  /**
-   * Target path relative to workspace cwd. If absent, the file is
-   * copied to its sibling with a "-copy" suffix.
-   */
-  target: z.string().min(1).optional(),
-})
-export type CopyFileRequest = z.infer<typeof copyFileRequestSchema>
+    export const copyFileRequestSchema = z.object({
+      /** Source path relative to workspace cwd */
+      path: z.string().min(1),
+      /**
+       * Target path relative to workspace cwd. If absent, the file is
+       * copied to its sibling with a "-copy" suffix.
+       */
+      target: z.string().min(1).optional(),
+      /** Optional workspace cwd override; falls back to threadCwdRegistry when omitted */
+      cwd: z.string().optional(),
+    })
+    export type CopyFileRequest = z.infer<typeof copyFileRequestSchema>
 
 export const deleteFileResultSchema = z.object({
   trashed: z.boolean(),
@@ -1103,11 +1145,13 @@ export type FileContent = z.infer<typeof fileContentSchema>
 
 // ─── Format file (Biome) ───────────────────────────────────────────────────────
 
-export const formatFileRequestSchema = z.object({
-  /** Path relative to workspace cwd */
-  path: z.string().min(1),
-})
-export type FormatFileRequest = z.infer<typeof formatFileRequestSchema>
+    export const formatFileRequestSchema = z.object({
+      /** Path relative to workspace cwd */
+      path: z.string().min(1),
+      /** Optional workspace cwd override; falls back to threadCwdRegistry when omitted */
+      cwd: z.string().optional(),
+    })
+    export type FormatFileRequest = z.infer<typeof formatFileRequestSchema>
 
 // ─── Theme colors (for swatch rendering) ──────────────────────────────────────
 

@@ -202,7 +202,7 @@ export function FilePreviewPane(props: FilePreviewPaneProps) {
     let cancelled = false
     setLoading(true)
 
-    void window.openpi.readFile(relPath).then((result) => {
+    void window.openpi.readFile(relPath, props.cwd).then((result) => {
       if (cancelled) return
       if (result) {
         setContent(result.content)
@@ -232,7 +232,7 @@ export function FilePreviewPane(props: FilePreviewPaneProps) {
     setSaveStatus('idle')
     setSaveError(null)
     try {
-      await window.openpi.writeFile(normalizedPath(), editBuffer())
+          await window.openpi.writeFile(normalizedPath(), editBuffer(), props.cwd ?? undefined)
       setContent(editBuffer())
 
       // Auto-format after save if format-on-save is enabled

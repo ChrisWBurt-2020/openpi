@@ -1,7 +1,9 @@
 import type { GitChangedFile, GitSyncAction } from '../../lib/ipc'
+import type { DiffScope } from './DiffScopeSwitcher'
 import { GitAgentBanner } from './GitAgentBanner'
 import { GitChangesList } from './GitChangesList'
 import { GitCommitArea } from './GitCommitArea'
+import { diffScopeFilter } from './scopeFilter'
 
 interface AgentChangedFiles {
   count: number
@@ -45,9 +47,18 @@ interface GitChangesTabProps {
   onCommitSignoffChange: (value: boolean) => void
   onSync: (action: GitSyncAction) => void
   onOpenHistory?: () => void
+  /* Phase 3: diff scope for file list filtering */
+  diffScope: DiffScope
 }
 
 export function GitChangesTab(props: GitChangesTabProps) {
+  // Filter files based on diff scope
+  const filteredStageable = () => diffScopeFilter(props.stageableFiles, props.diffScope)
+  const filteredStaged = () => diffScopeFilter(props.stagedFiles, props.diffScope)
+  const filteredUnstaged = () => diffScopeFilter(props.unstagedFiles, props.diffScope)
+  const filteredUntracked = () => diffScopeFilter(props.untrackedFiles, props.diffScope)
+  const filteredConflicts = () => diffScopeFilter(props.conflictFiles, props.diffScope)
+
   return (
     <div class="git-panel-body">
       <GitAgentBanner
@@ -61,12 +72,12 @@ export function GitChangesTab(props: GitChangesTabProps) {
           statusLoaded={props.statusLoaded}
           totalChanged={props.totalChanged}
           showingAgentFiles={props.showingAgentFiles}
-          stageableFiles={props.stageableFiles}
+          stageableFiles={filteredStageable()}
           pinnedAgentFiles={props.pinnedAgentFiles}
-          conflictFiles={props.conflictFiles}
-          stagedFiles={props.stagedFiles}
-          unstagedFiles={props.unstagedFiles}
-          untrackedFiles={props.untrackedFiles}
+          conflictFiles={filteredConflicts()}
+          stagedFiles={filteredStaged()}
+          unstagedFiles={filteredUnstaged()}
+          untrackedFiles={filteredUntracked()}
           loadingDiff={props.loadingDiff}
           onStageAll={props.onStageAll}
           onUnstageAll={props.onUnstageAll}

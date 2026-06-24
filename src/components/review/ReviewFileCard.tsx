@@ -7,6 +7,8 @@ import {
 } from '../../hooks/useReviewLineComments'
 import type { FileLineComment, NewFileLineComment } from '../../lib/fileLineComments'
 import type { AgentReviewChange, GitChangedFile, GitFileDiff } from '../../lib/ipc'
+import type { DiffScope } from '../git/DiffScopeSwitcher'
+import { GitHunkActions } from '../git/GitHunkActions'
 import { ReviewLineCommentAnnotation } from './ReviewLineCommentAnnotation'
 import { ReviewLineCommentChip } from './ReviewLineCommentChip'
 import {
@@ -50,6 +52,15 @@ export interface ReviewFileCardProps {
   onRemoveComment: (id: string) => void
   fileContentFor: (path: string) => string | null
   ensureFileContent: (path: string) => Promise<string | null>
+  /* Phase 3: hunk-level git actions */
+  diffScope?: DiffScope
+  isStaged?: boolean
+  onStageFile?: () => void | Promise<void>
+  onUnstageFile?: () => void | Promise<void>
+  onRevertFile?: () => void | Promise<void>
+  onStageHunk?: (hunkPatch: string) => void | Promise<void>
+  onUnstageHunk?: (hunkPatch: string) => void | Promise<void>
+  onRevertHunk?: (hunkPatch: string) => void | Promise<void>
 }
 
 function lineRangeLabel(range: SelectedLineRange): string {
@@ -71,6 +82,10 @@ function rangeContainsLine(range: SelectedLineRange, line: SelectedLineRange): b
 
 export function ReviewFileCard(props: ReviewFileCardProps) {
   const [diffInstance, setDiffInstance] = createSignal<FileDiff<undefined> | null>(null)
+  const loadedGitDiff = createMemo(() => {
+    if (props.gitDiffState?.status === 'loaded') return props.gitDiffState.diff
+    return null
+  })
   const controller = useReviewLineComments({
     filePath: props.item.path,
     fileContent: () => (props.isCommentActive ? props.fileContentFor(props.item.path) : null),
@@ -191,6 +206,22 @@ export function ReviewFileCard(props: ReviewFileCardProps) {
             )}
           </Show>
           <Show when={props.source === 'git'}>
+            <Show when={loadedGitDiff() && props.onStageHunk}>
+              <div class="diff-git-actions">
+                <GitHunkActions
+                  diff={loadedGitDiff()!}
+                  scope={props.diffScope ?? 'unstaged'}
+                  isStaged={props.isStaged ?? false}
+                  confirm={(action, detail) => window.confirm(`${action}\n\n${detail}`)}
+                  onStageFile={() => props.onStageFile?.()}
+                  onUnstageFile={() => props.onUnstageFile?.()}
+                  onRevertFile={() => props.onRevertFile?.()}
+                  onStageHunk={(patch) => props.onStageHunk?.(patch)}
+                  onUnstageHunk={(patch) => props.onUnstageHunk?.(patch)}
+                  onRevertHunk={(patch) => props.onRevertHunk?.(patch)}
+                />
+              </div>
+            </Show>
             <GitDiffRenderer
               path={props.item.path}
               state={props.gitDiffState}

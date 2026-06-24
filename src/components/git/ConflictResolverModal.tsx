@@ -11,11 +11,12 @@ import { UnresolvedFile } from '@pierre/diffs'
 import { X } from 'lucide-solid'
 import { createEffect, createSignal, onCleanup, Show } from 'solid-js'
 
-interface ConflictResolverModalProps {
-  path: string
-  onClose: () => void
-  onSaved: () => void | Promise<void>
-}
+    interface ConflictResolverModalProps {
+      path: string
+      cwd?: string | null
+      onClose: () => void
+      onSaved: () => void | Promise<void>
+    }
 
 function ConflictRenderer(props: {
   file: FileContents
@@ -91,7 +92,7 @@ export function ConflictResolverModal(props: ConflictResolverModalProps) {
     setSaving(true)
     setError(null)
     try {
-      await window.openpi.writeFile(props.path, next)
+      await window.openpi.writeFile(props.path, next, props.cwd ?? undefined)
       await props.onSaved()
       props.onClose()
     } catch (err) {

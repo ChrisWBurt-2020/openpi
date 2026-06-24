@@ -12,6 +12,7 @@
 import simpleGit from 'simple-git'
 import type { GitCheckoutBranchResult, GitStatusResult } from '../../src/lib/ipc'
 import { getGitStatus } from './gitDiffStatus'
+import { withGitLock } from './gitLock'
 
 // ─── Re-exports — consumers import from gitHost.ts ─────────────────────────
 
@@ -23,6 +24,9 @@ export {
   getGitRemoteUrl,
   getGitStatus,
   getWorkspaceSummary,
+  getGitStagedDiff,
+  getGitBranchDiff,
+  getGitBranchBase,
 } from './gitDiffStatus'
 export { getFileTree, startFileTreeWatch, stopFileTreeWatch } from './gitFileTree'
 export { getGitHistory, getGitRefs } from './gitHistory'
@@ -36,7 +40,11 @@ export {
   stashPop,
   syncRemote,
   unstageFile,
+  stageHunk,
+  unstageHunk,
+  revertHunk,
 } from './gitMutations'
+export type { HunkActionResult } from './gitMutations'
 export { searchFileContents } from './gitSearch'
 
 // ─── Polling watcher ────────────────────────────────────────────────────────
@@ -69,20 +77,28 @@ export async function checkoutBranch(
   cwd: string,
   branch: string
 ): Promise<GitCheckoutBranchResult> {
-  const git = simpleGit({ baseDir: cwd })
-  const status = await getGitStatus(cwd)
-  if (status.files.length > 0) {
-    return {
-      ok: false,
-      branch,
-      output: 'Commit, stash, or discard local changes before switching branches.',
+  return withGitLock(cwd, async () => {
+    const git = simpleGit({ baseDir: cwd })
+    // Check for dirty worktree directly — do NOT call getGitStatus()
+    // because that function also acquires withGitLock and would deadlock.
+    const status = await git.status()
+    if (status.files.length > 0) {
+      return {
+        ok: false,
+        branch,
+        output: 'Commit, stash, or discard local changes before switching branches.',
+      }
     }
-  }
 
-  try {
-    await git.checkout(branch)
-    return { ok: true, branch, output: `Switched to ${branch}.` }
-  } catch (error) {
-    return { ok: false, branch, output: error instanceof Error ? error.message : String(error) }
-  }
+    try {
+      await git.checkout(branch)
+      return { ok: true, branch, output: `Switched to ${branch}.` }
+    } catch (error) {
+      return {
+        ok: false,
+        branch,
+        output: error instanceof Error ? error.message : String(error),
+      }
+    }
+  })
 }

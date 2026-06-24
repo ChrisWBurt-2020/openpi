@@ -82,6 +82,14 @@ export const IPC = {
   GIT_PANEL_MOUNTED: 'openpi:git-panel-mounted',
   GIT_GENERATE_COMMIT_MSG: 'openpi:git-generate-commit-msg',
 
+  // Scoped diffs & hunk operations (Phase 3)
+  GIT_STAGED_DIFF: 'openpi:git-staged-diff',
+  GIT_BRANCH_DIFF: 'openpi:git-branch-diff',
+  GIT_BRANCH_BASE: 'openpi:git-branch-base',
+  GIT_STAGE_HUNK: 'openpi:git-stage-hunk',
+  GIT_UNSTAGE_HUNK: 'openpi:git-unstage-hunk',
+  GIT_REVERT_HUNK: 'openpi:git-revert-hunk',
+
   // Agent review changes (renderer → main)
   AGENT_REVIEW_LIST: 'openpi:agent-review-list',
   AGENT_REVIEW_KEEP: 'openpi:agent-review-keep',

@@ -1,6 +1,7 @@
 import { GripVertical } from 'lucide-solid'
 import { Show } from 'solid-js'
 import type { GitStatusResult } from '../../lib/ipc'
+import { type DiffScope, DiffScopeSwitcher } from './DiffScopeSwitcher'
 import type { GitPanelTab } from './gitPanelTypes'
 
 interface GitPanelHeaderProps {
@@ -9,6 +10,10 @@ interface GitPanelHeaderProps {
   status: GitStatusResult | null
   onActiveTabChange: (tab: GitPanelTab) => void
   onDragHandleMouseDown?: (event: MouseEvent) => void
+  /** Phase 3: Diff scope for the review pane */
+  diffScope?: DiffScope
+  onDiffScopeChange?: (scope: DiffScope) => void
+  hasBaseBranch?: boolean
 }
 
 export function GitPanelHeader(props: GitPanelHeaderProps) {
@@ -38,6 +43,13 @@ export function GitPanelHeader(props: GitPanelHeaderProps) {
             </Show>
           </button>
         </div>
+        {props.diffScope !== undefined && props.onDiffScopeChange && (
+          <DiffScopeSwitcher
+            value={props.diffScope}
+            onChange={props.onDiffScopeChange}
+            hasBaseBranch={props.hasBaseBranch}
+          />
+        )}
       </div>
 
       <Show
