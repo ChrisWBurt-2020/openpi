@@ -4,6 +4,7 @@ import type { SidecarMessage } from '../pi/sidecar'
 import { PiSidecarHost } from '../pi/sidecarHost'
 import { emitSessionError } from '../services/notificationHost'
 import type { SessionIndexStore } from './sessionIndex'
+import { threadCwdRegistry } from './threadCwd'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -113,10 +114,17 @@ export function applySessionValues(ready: SessionReady): void {
     sessionId: ready.sessionId,
   }
   _deferredWorkspace = null
+  if (ready.sessionId) {
+    threadCwdRegistry.register(ready.sessionId, { root: ready.cwd })
+    threadCwdRegistry.setActive(ready.sessionId)
+  }
   _mainWindow?.webContents.send(IPC.SESSION_READY, ready)
 }
 
 export function clearSessionState(): void {
+  if (_state?.sessionId) {
+    threadCwdRegistry.unregister(_state.sessionId)
+  }
   _state = null
   _deferredWorkspace = null
 }
@@ -128,6 +136,10 @@ export function applySessionReady(ready: SessionReady, cwd: string): void {
     sessionId: ready.sessionId,
   }
   _deferredWorkspace = null
+  if (ready.sessionId) {
+    threadCwdRegistry.register(ready.sessionId, { root: ready.cwd })
+    threadCwdRegistry.setActive(ready.sessionId)
+  }
   _mainWindow?.webContents.send(IPC.SESSION_READY, ready)
   _onRestartGitMonitoring?.(cwd)
 }

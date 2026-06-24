@@ -42,6 +42,7 @@ import {
   startSession,
 } from '../session/sessionHost'
 import type { SessionIndexStore } from '../session/sessionIndex'
+import { threadCwdRegistry } from '../session/threadCwd'
 import { registerAgentReviewIpc } from './agentReview'
 import { registerCustomizationsIpc } from './customizations'
 import { registerDiagnosticsIpc } from './diagnostics'
@@ -134,11 +135,11 @@ export function registerMainIpcHandlers(deps: RegisterMainIpcHandlersDeps): void
   })
   registerAgentReviewIpc({
     ipcMain: deps.ipcMain,
-    getCwd: () => getSessionState()?.cwd ?? null,
+    getCwd: () => threadCwdRegistry.resolveSafe(),
   })
   registerGitIpc({
     ipcMain: deps.ipcMain,
-    getCwd: () => getSessionState()?.cwd ?? null,
+    getCwd: () => threadCwdRegistry.resolveSafe(),
     getDeferredWorkspace,
     getGitHost: deps.getGitHost,
     restartGitMonitoring: deps.restartGitMonitoring,
@@ -148,7 +149,7 @@ export function registerMainIpcHandlers(deps: RegisterMainIpcHandlersDeps): void
   })
   registerFileIpc({
     ipcMain: deps.ipcMain,
-    getCwd: () => getSessionState()?.cwd ?? null,
+    getCwd: () => threadCwdRegistry.resolveSafe(),
     getMainWindow: deps.getMainWindow,
     getGitHost: deps.getGitHost,
     confirmHighRiskMutation: deps.confirmHighRiskMutation,
@@ -156,7 +157,7 @@ export function registerMainIpcHandlers(deps: RegisterMainIpcHandlersDeps): void
   registerSettingsIpc({
     ipcMain: deps.ipcMain,
     getAgentDir,
-    getCwd: () => getSessionState()?.cwd ?? null,
+    getCwd: () => threadCwdRegistry.resolveSafe(),
     getSettings,
     saveSettings: writeSettings,
     createRequestId: deps.createRequestId,
@@ -170,12 +171,12 @@ export function registerMainIpcHandlers(deps: RegisterMainIpcHandlersDeps): void
     createRequestId,
     requestSidecar: async (message) => requirePiSidecar().request(message),
     isWorkspaceTrusted: (cwd) => deps.getSessionIndex()?.isWorkspaceTrusted(cwd) ?? false,
-    getCwd: () => getSessionState()?.cwd ?? null,
+    getCwd: () => threadCwdRegistry.resolveSafe(),
   })
   registerCustomizationsIpc({
     ipcMain: deps.ipcMain,
     getAgentDir,
-    getCwd: () => getSessionState()?.cwd ?? getDeferredWorkspace(),
+    getCwd: () => threadCwdRegistry.resolveSafe() ?? getDeferredWorkspace(),
     getCustomizationsHost: deps.getCustomizationsHost,
     isWorkspaceTrusted: (cwd) => deps.getSessionIndex()?.isWorkspaceTrusted(cwd) ?? false,
     confirmHighRiskMutation: deps.confirmHighRiskMutation,
@@ -217,7 +218,7 @@ export function registerMainIpcHandlers(deps: RegisterMainIpcHandlersDeps): void
     ipcMain: deps.ipcMain,
     getAgentDir,
     getActiveSessionFile: () => getSessionState()?.sessionFile ?? null,
-    getActiveCwd: () => getSessionState()?.cwd ?? null,
+    getActiveCwd: () => threadCwdRegistry.resolveSafe(),
     startSession,
     refreshSessionIndex,
     emitOutputLine: deps.emitOutputLine,
