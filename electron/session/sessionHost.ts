@@ -1,11 +1,11 @@
 import type { BrowserWindow } from 'electron'
 import { IPC, type OutputLine, type SessionReady } from '../../src/lib/ipc'
+import { removeWorktree } from '../git/worktree'
 import type { SidecarMessage } from '../pi/sidecar'
 import { PiSidecarHost } from '../pi/sidecarHost'
 import { emitSessionError } from '../services/notificationHost'
 import type { SessionIndexStore } from './sessionIndex'
 import { threadCwdRegistry } from './threadCwd'
-
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 export type SessionState = {
@@ -18,6 +18,10 @@ export type StartSessionOptions = {
   sessionFile?: string
   /** Entry ID to fork from. When set, opens the session positioned at this entry. */
   forkEntryId?: string
+  /** Git worktree path (when session is in worktree mode). */
+  worktreePath?: string
+  /** Original repository root (when worktreePath is set, root is the repo, not worktree). */
+  rootCwd?: string
 }
 
 // ─── Module state ──────────────────────────────────────────────────────────────
@@ -123,6 +127,13 @@ export function applySessionValues(ready: SessionReady): void {
 
 export function clearSessionState(): void {
   if (_state?.sessionId) {
+    const cwd = threadCwdRegistry.get(_state.sessionId)
+    if (cwd?.worktreePath) {
+      // Fire-and-forget worktree cleanup.
+      removeWorktree(cwd.root, cwd.worktreePath).catch(() => {
+        /* cleanup best-effort */
+      })
+    }
     threadCwdRegistry.unregister(_state.sessionId)
   }
   _state = null
@@ -183,6 +194,14 @@ export async function startSession(cwd: string, options: StartSessionOptions = {
     cwd: ready.cwd,
     sessionFile: ready.sessionFile,
     sessionId: ready.sessionId,
+  }
+
+  // Worktree mode: correct registry entry to reflect root repo + worktree path.
+  if (options.worktreePath && options.rootCwd && ready.sessionId) {
+    threadCwdRegistry.update(ready.sessionId, {
+      root: options.rootCwd,
+      worktreePath: options.worktreePath,
+    })
   }
 
   _mainWindow?.webContents.send(IPC.SESSION_READY, ready)

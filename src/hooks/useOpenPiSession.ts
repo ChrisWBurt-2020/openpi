@@ -295,9 +295,11 @@ export function useOpenPiSession() {
     await window.openpi.openSession({ path: session.path })
   }
 
-  const createNewSession = async () => {
+  const createNewSession = async (mode?: 'local' | 'worktree', baseBranch?: string) => {
     setError(null)
-    await window.openpi.newSession(sessionIndex.selectedWorkspaceForQuery() ?? ready()?.cwd)
+    const cwd = sessionIndex.selectedWorkspaceForQuery() ?? ready()?.cwd
+    if (!cwd) return
+    await window.openpi.newSession(cwd, mode, baseBranch)
   }
 
   const send = async (contextPrefix?: string) => {

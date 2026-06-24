@@ -18,6 +18,7 @@ export const KEYBINDING_ACTION_IDS = [
   'compactSession',
   'forkFromMessage',
   'newSession',
+  'newWorktreeSession',
   'nextMessage',
   'nextSession',
   'nextUnreadSession',
@@ -154,6 +155,12 @@ export const KEYBINDING_CONFIG = {
     description: 'Start a new agent session',
     category: 'session',
     defaultKeys: 'Shift+Cmd+S',
+  },
+  newWorktreeSession: {
+    label: 'New Worktree Session',
+    description: 'Start a new session in an isolated Git worktree',
+    category: 'session',
+    defaultKeys: 'Mod+Alt+Shift+N',
   },
   nextMessage: {
     label: 'Next Message',

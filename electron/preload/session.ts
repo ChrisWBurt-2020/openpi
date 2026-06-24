@@ -59,8 +59,8 @@ export const sessionApi = {
     ipcRenderer.invoke(IPC.GET_SESSION_TREE, { path }),
   openSession: (payload: OpenSession): Promise<void> =>
     ipcRenderer.invoke(IPC.OPEN_SESSION, payload),
-  newSession: (cwd?: string): Promise<void> =>
-    ipcRenderer.invoke(IPC.NEW_SESSION, cwd ? { cwd } : {}),
+  newSession: (cwd?: string, mode?: 'local' | 'worktree', baseBranch?: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.NEW_SESSION, { cwd, mode, baseBranch }),
 
   getWorkspaceSummary: (cwd: string): Promise<WorkspaceSummaryInfo> =>
     ipcRenderer.invoke(IPC.GET_WORKSPACE_SUMMARY, { cwd }),

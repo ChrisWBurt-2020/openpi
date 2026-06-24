@@ -22,7 +22,7 @@ interface UseAppKeybindingsOptions {
   closeFile: (idx: number) => void
   triggerRename: (() => void) | undefined
   isStreaming: () => boolean
-  createNewSession: () => Promise<void>
+  createNewSession: (mode?: 'local' | 'worktree') => Promise<void>
   openWorkspace: () => Promise<void>
 }
 
@@ -50,6 +50,7 @@ export function useAppKeybindings(options: UseAppKeybindingsOptions) {
 
     return [
       command('newSession', () => void options.createNewSession()),
+      command('newWorktreeSession', () => void options.createNewSession('worktree')),
       command('openFileSearch', () => {
         options.setRightPanelOpen(() => true)
         options.setFileSearchOpen(true)

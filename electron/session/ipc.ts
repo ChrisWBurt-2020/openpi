@@ -1,16 +1,17 @@
-import { type BrowserWindow, dialog, type IpcMain } from 'electron'
-import type {
-  BashExecutionResult,
-  OutputLine,
-  SessionHistoryPage,
-  SessionInfo,
-  SessionListItem,
-  SessionReady,
-  SessionStats,
-  SessionTreeResponse,
-  UsageSummary,
-  WorkspaceInfo,
-} from '../../src/lib/ipc'
+    import * as crypto from 'node:crypto'
+    import { type BrowserWindow, dialog, type IpcMain } from 'electron'
+    import type {
+      BashExecutionResult,
+      OutputLine,
+      SessionHistoryPage,
+      SessionInfo,
+      SessionListItem,
+      SessionReady,
+      SessionStats,
+      SessionTreeResponse,
+      UsageSummary,
+      WorkspaceInfo,
+    } from '../../src/lib/ipc'
 import {
   compactSessionSchema,
   forkSessionSchema,
@@ -26,6 +27,7 @@ import {
   setSessionNameSchema,
   usageSummaryRequestSchema,
 } from '../../src/lib/ipc'
+import { createWorktree, generateWorktreePath, getCurrentBranch } from '../git/worktree'
 import type { SidecarCommand, SidecarMessage } from '../pi/sidecar'
 import { highRiskShellReason } from '../services/shellEnv'
 import type { SessionState } from '../session/sessionHost'
@@ -42,7 +44,15 @@ interface SessionsIpcDeps {
   ipcMain: IpcMain
   getMainWindow: () => BrowserWindow | null
   outputBuffer: readonly OutputLine[]
-  startSession: (cwd: string, options?: { sessionFile?: string }) => Promise<void>
+  startSession: (
+    cwd: string,
+    options?: {
+      sessionFile?: string
+      forkEntryId?: string
+      worktreePath?: string
+      rootCwd?: string
+    }
+  ) => Promise<void>
   emitSessionError: (message: string) => void
   ensureActiveSession: () => Promise<SessionState | null>
   getSessionState: () => SessionState | null
@@ -268,11 +278,29 @@ export function registerSessionsIpc(deps: SessionsIpcDeps): void {
   })
 
   deps.ipcMain.handle(IPC.NEW_SESSION, async (_event, raw: unknown) => {
-    const { cwd } = newSessionSchema.parse(raw)
+    const { cwd, mode, baseBranch } = newSessionSchema.parse(raw)
     const workspacePath =
       cwd ?? deps.getSessionState()?.cwd ?? deps.getSessionIndex()?.getLastWorkspace()
     if (!workspacePath) return
-    await deps.startSession(workspacePath)
+
+    if (mode === 'worktree') {
+      const threadId = crypto.randomUUID()
+      const wtPath = generateWorktreePath(workspacePath, threadId)
+      const branch = baseBranch ?? (await getCurrentBranch(workspacePath))
+      try {
+        await createWorktree({
+          repoPath: workspacePath,
+          baseBranch: branch,
+          worktreePath: wtPath,
+        })
+      } catch (err) {
+        console.error('[worktree] creation failed:', err)
+        throw err
+      }
+      await deps.startSession(wtPath, { worktreePath: wtPath, rootCwd: workspacePath })
+    } else {
+      await deps.startSession(workspacePath)
+    }
   })
 
   deps.ipcMain.handle(IPC.SET_SESSION_NAME, (_event, raw: unknown) => {

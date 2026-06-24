@@ -85,6 +85,8 @@ export type SessionMessagesRequest = z.infer<typeof sessionMessagesRequestSchema
 export const newSessionSchema = z
   .object({
     cwd: z.string().min(1).optional(),
+    mode: z.enum(['local', 'worktree']).optional().default('local'),
+    baseBranch: z.string().min(1).optional(),
   })
   .optional()
   .default({})
