@@ -27,24 +27,7 @@ export const TOOL_LABEL: Record<string, string> = {
   find: 'Find',
   ls: 'List',
   // Pi Subagents
-  Agent: 'Agent',
-  get_subagent_result: 'Agent',
-  steer_subagent: 'Agent',
-  // Goal/plan tools
-  get_goal: 'Goal',
-  create_goal: 'Goal',
-  update_goal: 'Goal',
-  update_plan: 'Plan',
-  // Ask / question tool
-  ask_user_question: 'Ask',
-  // Legacy spec compatibility tools
-  spec_create: 'Legacy',
-  spec_next_phase: 'Legacy',
-  spec_run_task: 'Legacy',
-  spec_run_all: 'Legacy',
-  spec_status: 'Legacy',
-  spec_analyze: 'Legacy',
-  spec_sync_tasks: 'Legacy',
+  task: 'Task',
 }
 
 export function labelForTool(name: string): string {

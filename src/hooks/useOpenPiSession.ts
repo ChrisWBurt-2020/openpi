@@ -121,7 +121,7 @@ export function useOpenPiSession() {
       setQueueMode('prompt')
       currentTurnStartMs = null
       void refreshContextUsage()
-      // Clear finished subagents on session end; keep tasks/ask across agent turns
+      // Clear finished subagents on session end; keep task tray across agent turns
       trackers.clearFinished()
 
       // Compute wall-clock TPS using agent_end event.messages (same approach as Pi's tps.ts)
@@ -129,11 +129,8 @@ export function useOpenPiSession() {
     }
 
     // ── Extension tracker dispatch ───────────────────────────────────────────
-    if (event.type === 'openpi_subagent_update' || event.type === 'tool_execution_start') {
-      trackers.dispatchEvent(event, event.type)
-    }
-    if (event.type === 'tool_execution_end') {
-      trackers.dispatchEvent(event, event.type)
+    if (event.type === 'tool_execution_start' || event.type === 'tool_execution_end') {
+      trackers.dispatchEvent(event as Record<string, unknown>, event.type)
     }
 
     if (event.type === 'queue_update') {
@@ -459,26 +456,6 @@ export function useOpenPiSession() {
     }
   }
 
-  // ── Ask-user-question actions ─────────────────────────────────────────
-  const submitAsk = async (formatted: string) => {
-    trackers.clearAsk()
-    remoteSync.markLocalActivity()
-    try {
-      if (isStreaming()) {
-        await window.openpi.steer(formatted)
-      } else {
-        _justSentPrompt = true
-        await window.openpi.prompt(formatted)
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    }
-  }
-
-  const dismissAsk = () => {
-    trackers.clearAsk()
-  }
-
   // ── Return — getter-based object so callers use session.ready (not session.ready()) ──
   return {
     // Signals exposed as getters (transparent to callers, reactive in JSX/createEffect)
@@ -584,16 +561,13 @@ export function useOpenPiSession() {
     },
 
     // ── Extension tracker state ─────────────────────────────────────
-    get askState() {
-      return trackers.askState()
+    get tasks() {
+      return trackers.tasks()
     },
-    get agents() {
-      return trackers.agents()
+    get taskNotification() {
+      return trackers.taskNotification()
     },
-    get subagentNotification() {
-      return trackers.subagentNotification()
-    },
-    dismissSubagentNotification: () => trackers.dismissSubagentNotification(),
+    dismissTaskNotification: () => trackers.dismissTaskNotification(),
     get artifacts() {
       return subagentFiles.artifacts()
     },
@@ -639,8 +613,6 @@ export function useOpenPiSession() {
     reloadSession,
     copyLastAssistantText,
     getSessionInfo,
-    submitAsk,
-    dismissAsk,
     clearTasks: () => {
       trackers.clearAll()
     },

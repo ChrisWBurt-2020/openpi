@@ -6,7 +6,7 @@
  * main process for git-apply.
  */
 
-    import { createMemo, createSignal, For, Show } from 'solid-js'
+import { createMemo, createSignal, For, Show } from 'solid-js'
 import type { GitFileDiff } from '../../lib/ipc'
 import type { DiffScope } from './DiffScopeSwitcher'
 import { countHunkLines, hunkHeading, splitRawPatch } from './hunkUtils'
@@ -33,8 +33,8 @@ export function GitHunkActions(props: GitHunkActionsProps) {
   const [hunkResults, setHunkResults] = createSignal<Record<number, string>>({})
   const [fileBusy, setFileBusy] = createSignal<string | null>(null)
 
-      const hunks = createMemo(() => splitRawPatch(props.diff.rawPatch))
-      const hunkCount = createMemo(() => hunks().length)
+  const hunks = createMemo(() => splitRawPatch(props.diff.rawPatch))
+  const hunkCount = createMemo(() => hunks().length)
 
   const showStage = () => props.scope === 'unstaged'
   const showUnstage = () => props.scope === 'staged'

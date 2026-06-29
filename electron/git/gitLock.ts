@@ -75,10 +75,22 @@ export class GitLock {
       // `fn()` rejects AFTER the outer has already settled via the timeout
       // branch and the onRejected tries to re-reject an already-rejected
       // Promise.
-      fn().then(
-        (v) => settle(() => { clearTimeout(timer); resolve(v) }),
-        (err) => settle(() => { clearTimeout(timer); reject(err instanceof Error ? err : new Error(String(err))) })
-      ).catch(() => {/* swallowed - the outer Promise was already settled by `settle` */})
+      fn()
+        .then(
+          (v) =>
+            settle(() => {
+              clearTimeout(timer)
+              resolve(v)
+            }),
+          (err) =>
+            settle(() => {
+              clearTimeout(timer)
+              reject(err instanceof Error ? err : new Error(String(err)))
+            })
+        )
+        .catch(() => {
+          /* swallowed - the outer Promise was already settled by `settle` */
+        })
     })
   }
 

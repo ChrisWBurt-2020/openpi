@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Pi-task workbench: watches `.pi/artifacts/TASKS.md` from `@heyhuynhgiabuu/pi-task` and shows running tasks in the tray; live `task` tool progress in the session UI.
+
+### Changed
+
+- Delegation requires `pi install npm:@heyhuynhgiabuu/pi-task` for the `task` tool. OpenPi no longer registers built-in `Agent` / `get_subagent_result` / `steer_subagent` customTools on the sidecar.
+- Phase 7 beta evidence is `npm test` / Vitest, not `docs/TEST_MATRIX.md`.
+
+### Removed
+
+- Built-in subagent host (`electron/subagent/`).
+- Ask UI (`ask_user_question` modal/widget) and goal/harness v2 overlay (`syncBridge`, harness plan CSS, harness roadmap docs).
+
 ## [0.2.3] - 2026-06-19
 
 - Usage dashboard with activity heatmap, model leaderboard, and provider market share.

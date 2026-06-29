@@ -51,8 +51,8 @@ export const gitApi = {
     getRefs: (): Promise<GitRefsResult | null> => ipcRenderer.invoke(IPC.GIT_REFS),
     getHistory: (query = '', limit = 100): Promise<GitHistoryResult | null> =>
       ipcRenderer.invoke(IPC.GIT_HISTORY, { query, limit }),
-     getCommitDiff: (hash: string, path?: string, cwd?: string): Promise<GitFileDiff | null> =>
-       ipcRenderer.invoke(IPC.GIT_COMMIT_DIFF, cwd ? { hash, path, cwd } : { hash, path }),
+    getCommitDiff: (hash: string, path?: string, cwd?: string): Promise<GitFileDiff | null> =>
+      ipcRenderer.invoke(IPC.GIT_COMMIT_DIFF, cwd ? { hash, path, cwd } : { hash, path }),
     checkoutBranch: (branch: string): Promise<GitCheckoutBranchResult | null> =>
       ipcRenderer.invoke(IPC.GIT_CHECKOUT_BRANCH, { branch }),
     createBranch: (name: string): Promise<GitCreateBranchResult | null> =>
@@ -85,20 +85,23 @@ export const gitApi = {
       ipcRenderer.on(IPC.AGENT_CHANGED_FILES, handler)
       return () => ipcRenderer.removeListener(IPC.AGENT_CHANGED_FILES, handler)
     },
-        /* Phase 3: Scoped diffs */
-        getGitStagedDiff: (cwd?: string): Promise<Record<string, GitFileDiff> | null> =>
-          ipcRenderer.invoke(IPC.GIT_STAGED_DIFF, cwd ? { cwd } : {}),
-        getGitBranchDiff: (baseBranch?: string, cwd?: string): Promise<Record<string, GitFileDiff> | null> =>
-          ipcRenderer.invoke(IPC.GIT_BRANCH_DIFF, { baseBranch, cwd }),
-        getGitBranchBase: (cwd?: string): Promise<{ base: string } | null> =>
-          ipcRenderer.invoke(IPC.GIT_BRANCH_BASE, cwd ? { cwd } : {}),
-        /* Phase 3: Hunk-level operations */
-        stageHunk: (payload: { path: string; hunkPatch: string; cwd?: string }) =>
-          ipcRenderer.invoke(IPC.GIT_STAGE_HUNK, payload),
-        unstageHunk: (payload: { path: string; hunkPatch: string; cwd?: string }) =>
-          ipcRenderer.invoke(IPC.GIT_UNSTAGE_HUNK, payload),
-        revertHunk: (payload: { path: string; hunkPatch: string; cwd?: string }) =>
-          ipcRenderer.invoke(IPC.GIT_REVERT_HUNK, payload),
+    /* Phase 3: Scoped diffs */
+    getGitStagedDiff: (cwd?: string): Promise<Record<string, GitFileDiff> | null> =>
+      ipcRenderer.invoke(IPC.GIT_STAGED_DIFF, cwd ? { cwd } : {}),
+    getGitBranchDiff: (
+      baseBranch?: string,
+      cwd?: string
+    ): Promise<Record<string, GitFileDiff> | null> =>
+      ipcRenderer.invoke(IPC.GIT_BRANCH_DIFF, { baseBranch, cwd }),
+    getGitBranchBase: (cwd?: string): Promise<{ base: string } | null> =>
+      ipcRenderer.invoke(IPC.GIT_BRANCH_BASE, cwd ? { cwd } : {}),
+    /* Phase 3: Hunk-level operations */
+    stageHunk: (payload: { path: string; hunkPatch: string; cwd?: string }) =>
+      ipcRenderer.invoke(IPC.GIT_STAGE_HUNK, payload),
+    unstageHunk: (payload: { path: string; hunkPatch: string; cwd?: string }) =>
+      ipcRenderer.invoke(IPC.GIT_UNSTAGE_HUNK, payload),
+    revertHunk: (payload: { path: string; hunkPatch: string; cwd?: string }) =>
+      ipcRenderer.invoke(IPC.GIT_REVERT_HUNK, payload),
   },
 
   agentReview: {
@@ -127,16 +130,25 @@ export const gitApi = {
 
   readFile: (relPath: string, cwd?: string): Promise<FileContent | null> =>
     ipcRenderer.invoke(IPC.READ_FILE, cwd ? { path: relPath, cwd } : { path: relPath }),
-      writeFile: (relPath: string, content: string, cwd?: string): Promise<void> =>
-        ipcRenderer.invoke(IPC.WRITE_FILE, cwd ? { path: relPath, content, cwd } : { path: relPath, content }),
-      deleteFile: (relPath: string, cwd?: string): Promise<{ trashed: boolean }> =>
-        ipcRenderer.invoke(IPC.DELETE_FILE, cwd ? { path: relPath, cwd } : { path: relPath }),
-      renameFile: (relPath: string, newName: string, cwd?: string): Promise<string> =>
-        ipcRenderer.invoke(IPC.RENAME_FILE, cwd ? { path: relPath, newName, cwd } : { path: relPath, newName }),
-      copyFile: (relPath: string, target?: string, cwd?: string): Promise<string> =>
-        ipcRenderer.invoke(IPC.COPY_FILE, cwd ? { path: relPath, target, cwd } : { path: relPath, target }),
-      formatFile: (relPath: string, cwd?: string): Promise<string> =>
-        ipcRenderer.invoke(IPC.FORMAT_FILE, cwd ? { path: relPath, cwd } : { path: relPath }),
+  writeFile: (relPath: string, content: string, cwd?: string): Promise<void> =>
+    ipcRenderer.invoke(
+      IPC.WRITE_FILE,
+      cwd ? { path: relPath, content, cwd } : { path: relPath, content }
+    ),
+  deleteFile: (relPath: string, cwd?: string): Promise<{ trashed: boolean }> =>
+    ipcRenderer.invoke(IPC.DELETE_FILE, cwd ? { path: relPath, cwd } : { path: relPath }),
+  renameFile: (relPath: string, newName: string, cwd?: string): Promise<string> =>
+    ipcRenderer.invoke(
+      IPC.RENAME_FILE,
+      cwd ? { path: relPath, newName, cwd } : { path: relPath, newName }
+    ),
+  copyFile: (relPath: string, target?: string, cwd?: string): Promise<string> =>
+    ipcRenderer.invoke(
+      IPC.COPY_FILE,
+      cwd ? { path: relPath, target, cwd } : { path: relPath, target }
+    ),
+  formatFile: (relPath: string, cwd?: string): Promise<string> =>
+    ipcRenderer.invoke(IPC.FORMAT_FILE, cwd ? { path: relPath, cwd } : { path: relPath }),
   getGitRemoteUrl: (): Promise<string | null> => ipcRenderer.invoke(IPC.GIT_REMOTE_URL),
 
   fff: {

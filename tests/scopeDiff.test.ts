@@ -34,11 +34,7 @@ describe('getGitFileDiff scope parameter (integration)', () => {
     // File: 3 lines, "original line 2" on the middle line
     const filePath = path.join(cwd, 'src', 'foo.ts')
     fs.mkdirSync(path.dirname(filePath), { recursive: true })
-    fs.writeFileSync(
-      filePath,
-      ['line 1', 'original line 2', 'line 3', ''].join('\n'),
-      'utf-8'
-    )
+    fs.writeFileSync(filePath, ['line 1', 'original line 2', 'line 3', ''].join('\n'), 'utf-8')
     await git.add('src/foo.ts')
     await git.commit('initial')
   })
@@ -52,11 +48,7 @@ describe('getGitFileDiff scope parameter (integration)', () => {
   it('unstaged scope: returns working-tree vs index', async () => {
     const filePath = path.join(cwd, 'src', 'foo.ts')
     // Make an unstaged change (NOT staged)
-    fs.writeFileSync(
-      filePath,
-      ['line 1', 'UNSTAGED line 2', 'line 3', ''].join('\n'),
-      'utf-8'
-    )
+    fs.writeFileSync(filePath, ['line 1', 'UNSTAGED line 2', 'line 3', ''].join('\n'), 'utf-8')
 
     const diff = await getGitFileDiff(cwd, 'src/foo.ts', { scope: 'unstaged' })
     expect(diff.rawPatch).toContain('original line 2')
@@ -69,11 +61,7 @@ describe('getGitFileDiff scope parameter (integration)', () => {
   it('staged scope: returns index vs HEAD', async () => {
     const filePath = path.join(cwd, 'src', 'foo.ts')
     // Make a staged change
-    fs.writeFileSync(
-      filePath,
-      ['line 1', 'STAGED line 2', 'line 3', ''].join('\n'),
-      'utf-8'
-    )
+    fs.writeFileSync(filePath, ['line 1', 'STAGED line 2', 'line 3', ''].join('\n'), 'utf-8')
     const git = simpleGit({ baseDir: cwd })
     await git.add('src/foo.ts')
     // Now also add an unstaged change on top
@@ -99,11 +87,7 @@ describe('getGitFileDiff scope parameter (integration)', () => {
     // Create a feature branch with a change
     const git = simpleGit({ baseDir: cwd })
     await git.checkoutLocalBranch('feature')
-    fs.writeFileSync(
-      filePath,
-      ['line 1', 'FEATURE line 2', 'line 3', ''].join('\n'),
-      'utf-8'
-    )
+    fs.writeFileSync(filePath, ['line 1', 'FEATURE line 2', 'line 3', ''].join('\n'), 'utf-8')
     await git.add('src/foo.ts')
     await git.commit('feature change')
 
@@ -121,11 +105,7 @@ describe('getGitFileDiff scope parameter (integration)', () => {
   it('auto scope (default): falls back to staged when unstaged is empty', async () => {
     const filePath = path.join(cwd, 'src', 'foo.ts')
     // Make a staged-only change (no unstaged)
-    fs.writeFileSync(
-      filePath,
-      ['line 1', 'STAGED ONLY line 2', 'line 3', ''].join('\n'),
-      'utf-8'
-    )
+    fs.writeFileSync(filePath, ['line 1', 'STAGED ONLY line 2', 'line 3', ''].join('\n'), 'utf-8')
     const git = simpleGit({ baseDir: cwd })
     await git.add('src/foo.ts')
 
@@ -144,11 +124,7 @@ describe('getGitFileDiff scope parameter (integration)', () => {
   it('staged scope with no staged changes returns empty diff', async () => {
     // Only unstaged change
     const filePath = path.join(cwd, 'src', 'foo.ts')
-    fs.writeFileSync(
-      filePath,
-      ['line 1', 'UNSTAGED line 2', 'line 3', ''].join('\n'),
-      'utf-8'
-    )
+    fs.writeFileSync(filePath, ['line 1', 'UNSTAGED line 2', 'line 3', ''].join('\n'), 'utf-8')
 
     const diff = await getGitFileDiff(cwd, 'src/foo.ts', { scope: 'staged' })
     expect(diff.rawPatch).toBe('')

@@ -11,8 +11,8 @@
  */
 
 import * as fs from 'node:fs'
-import * as path from 'node:path'
 import * as os from 'node:os'
+import * as path from 'node:path'
 import simpleGit from 'simple-git'
 import type { GitSyncAction, GitSyncResult } from '../../src/lib/ipc'
 import { withGitLock } from './gitLock'

@@ -18,18 +18,17 @@ OpenPi is a **human-enabling workbench** for [Pi](https://pi.dev) (`@earendil-wo
 - Git panel, file tree/search, CM6 file viewer, split diff viewer (main-owned Git).
 - Terminal/output panel: multi-tab PTY, renameable tabs, exit indicators.
 - **Trust (Phase 6):** workspace trust, extension/package install confirms, protected paths, high-risk shell/Git mutation prompts, secret redaction, diagnostics export bundle, SQLite hardening.
-- **Built-in subagents:** `Agent` / `get_subagent_result` / `steer_subagent` on sidecar; Worker, Explorer, Scout, Planner, Reviewer profiles; `.pi/agents/*.md` discovery; @mention autocomplete; subagent status widget.
-- **Goal/harness:** `/goal` + plan files (`~/.pi/agent/.openpi-goal.json`, `.openpi-plan.json`); harness extension for build pipeline (global `~/.pi/agent/extensions/harness/`).
- - Conversation polish: live token counter (streaming), code line numbers, tool cards including `ask_user_question` modal.
+- **Pi-task delegation:** `@heyhuynhgiabuu/pi-task` `task` tool; `.pi/artifacts/TASKS.md` tray + live task widget; install via Pi packages (`pi install npm:@heyhuynhgiabuu/pi-task`).
+ - Conversation polish: live token counter (streaming), code line numbers, tool cards.
  - Agent review: unified Review tab now has a source dropdown for `Git changes` vs `Last turn changes`; last-turn mode uses agent snapshots, file accordions, proper diff rendering, Keep/Revert/Revert all, coalesces repeated edits per file, and supports diff line comments with hover `+`, content-row multi-select, saved annotations, composer chips, and structured `<file_comment>` prompt context.
  - CI: PR/main checks; tag-triggered beta releases (macOS/Windows/Linux). **Signing/notarization not configured.**
 
 ### Next (Phase 7 — see ROADMAP)
 
-- **P0:** TEST_MATRIX / test evidence, hunk-level/pre-apply diff polish, **live token/cost per turn** while streaming.
+- **P0:** `npm test` coverage for critical paths, hunk-level/pre-apply diff polish, **live token/cost per turn** while streaming.
 
 - **P1:** Session tree map v2, subagent card polish.
-- **P2:** Plan overlay, workbench context bridge, auto-updater (after signing).
+- **P2:** Workbench context bridge, auto-updater (after signing).
 
 ## Known constraints
 

@@ -21,7 +21,6 @@ import {
   SettingsManager,
 } from '@earendil-works/pi-coding-agent'
 import { expandPromptTemplateText } from '../../src/lib/sessionPrompt'
-import { createOpenPiSubagentTools } from '../subagent/manager'
 import { createOpenPiExtensionUIContext } from './extensionUiContext'
 import { fulfillExtensionUiPending } from './extensionUiPending'
 import { enforceIgnoreScriptsEnv } from './safePackageManager'
@@ -184,7 +183,7 @@ function sendUnsupportedSlashCommand(invocationName: string): void {
 
 /**
  * Build the final prompt text sent to Pi SDK.
- * Always runs expansion (goal commands, then prompt templates) regardless of contextPrefix.
+ * Always runs expansion (skill commands, then prompt templates) regardless of contextPrefix.
  */
 function buildSidecarPromptText(
   text: string,
@@ -328,13 +327,6 @@ async function startSession(
     modelRegistry,
     settingsManager,
     resourceLoader,
-    customTools: createOpenPiSubagentTools({
-      getAgentDir,
-      isWorkspaceTrusted: () => state?.workspaceTrusted ?? workspaceTrusted,
-      onSubagentUpdate: (event) => {
-        send({ type: 'session_event', event })
-      },
-    }),
   })
 
   const extensionUiSinks = {

@@ -232,7 +232,7 @@ export function FilePreviewPane(props: FilePreviewPaneProps) {
     setSaveStatus('idle')
     setSaveError(null)
     try {
-          await window.openpi.writeFile(normalizedPath(), editBuffer(), props.cwd ?? undefined)
+      await window.openpi.writeFile(normalizedPath(), editBuffer(), props.cwd ?? undefined)
       setContent(editBuffer())
 
       // Auto-format after save if format-on-save is enabled

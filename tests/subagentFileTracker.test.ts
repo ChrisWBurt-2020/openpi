@@ -4,7 +4,7 @@ import { SubagentFileTracker } from '../src/lib/subagentFileTracker'
 
 function makeArtifact(overrides: Partial<SubagentArtifact> = {}): SubagentArtifact {
   return {
-    id: 'task-1',
+    id: 'm1abc-x7f2',
     agent: 'worker',
     prompt: 'do work',
     context: '# CONTEXT\ndo work',
@@ -12,7 +12,7 @@ function makeArtifact(overrides: Partial<SubagentArtifact> = {}): SubagentArtifa
     status: 'running',
     createdAt: 1000,
     completedAt: null,
-    filePath: '/tmp/.pi/artifacts/task-1',
+    filePath: '/tmp/.pi/artifacts/TASKS.md',
     ...overrides,
   }
 }

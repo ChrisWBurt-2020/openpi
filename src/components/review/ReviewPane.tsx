@@ -92,16 +92,16 @@ export function ReviewPane(props: ReviewPaneProps) {
   const items = createMemo(() => (props.source === 'last-turn' ? agentItems() : gitItems()))
   const hasLastTurn = createMemo(() => props.agentReview.changes.length > 0)
 
-      createEffect(() => {
-        if (props.source !== 'git' || !props.cwd) return
-        setGitLoading(true)
-        setGitError(null)
-        window.openpi.git
-          .getStatus(props.cwd)
-          .then((status) => setGitFiles(status?.files ?? []))
-          .catch((err) => setGitError(err instanceof Error ? err.message : String(err)))
-          .finally(() => setGitLoading(false))
-      })
+  createEffect(() => {
+    if (props.source !== 'git' || !props.cwd) return
+    setGitLoading(true)
+    setGitError(null)
+    window.openpi.git
+      .getStatus(props.cwd)
+      .then((status) => setGitFiles(status?.files ?? []))
+      .catch((err) => setGitError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setGitLoading(false))
+  })
 
   createEffect(() => {
     const path = props.requestedGitPath
@@ -125,19 +125,19 @@ export function ReviewPane(props: ReviewPaneProps) {
     const existing = gitDiffs()[path]
     if (existing && existing.status !== 'error') return
     setGitDiffs((prev) => ({ ...prev, [path]: { status: 'loading' } }))
-        window.openpi.git
-          .getDiff(path, props.cwd)
-          .then((diff) => setGitDiffs((prev) => ({ ...prev, [path]: { status: 'loaded', diff } })))
-          .catch((err) =>
-            setGitDiffs((prev) => ({
-              ...prev,
-              [path]: {
-                status: 'error',
-                message: err instanceof Error ? err.message : String(err),
-              },
-            }))
-          )
-      }
+    window.openpi.git
+      .getDiff(path, props.cwd)
+      .then((diff) => setGitDiffs((prev) => ({ ...prev, [path]: { status: 'loaded', diff } })))
+      .catch((err) =>
+        setGitDiffs((prev) => ({
+          ...prev,
+          [path]: {
+            status: 'error',
+            message: err instanceof Error ? err.message : String(err),
+          },
+        }))
+      )
+  }
 
   createEffect(() => {
     if (props.source !== 'git') return
@@ -157,23 +157,23 @@ export function ReviewPane(props: ReviewPaneProps) {
   // Phase 3: refresh helpers for hunk actions
   // Both are async — callers MUST await them sequentially to avoid
   // concurrent git operations.
-      const refreshGitDiff = async (path: string) => {
-        setGitDiffs((prev) => ({ ...prev, [path]: { status: 'loading' } }))
-        try {
-          const diff = await window.openpi.git.getDiff(path, props.cwd)
-          setGitDiffs((prev) => ({ ...prev, [path]: { status: 'loaded', diff } }))
-        } catch (err) {
-          setGitDiffs((prev) => ({
-            ...prev,
-            [path]: { status: 'error', message: err instanceof Error ? err.message : String(err) },
-          }))
-        }
-      }
+  const refreshGitDiff = async (path: string) => {
+    setGitDiffs((prev) => ({ ...prev, [path]: { status: 'loading' } }))
+    try {
+      const diff = await window.openpi.git.getDiff(path, props.cwd)
+      setGitDiffs((prev) => ({ ...prev, [path]: { status: 'loaded', diff } }))
+    } catch (err) {
+      setGitDiffs((prev) => ({
+        ...prev,
+        [path]: { status: 'error', message: err instanceof Error ? err.message : String(err) },
+      }))
+    }
+  }
 
-      const refreshGitStatus = async () => {
-        const status = await window.openpi.git.getStatus(props.cwd)
-        setGitFiles(status?.files ?? [])
-      }
+  const refreshGitStatus = async () => {
+    const status = await window.openpi.git.getStatus(props.cwd)
+    setGitFiles(status?.files ?? [])
+  }
 
   // Each handler awaits the mutation, then refreshes diff + status sequentially.
   const handleStageFile = async (path: string) => {
@@ -191,19 +191,19 @@ export function ReviewPane(props: ReviewPaneProps) {
     await refreshGitDiff(path)
     await refreshGitStatus()
   }
-      const handleStageHunk = async (path: string, hunkPatch: string) => {
-        await window.openpi.git.stageHunk({ path, hunkPatch, cwd: props.cwd })
-        // gitLock in main thread already serializes; run both refreshes in parallel
-        await Promise.all([refreshGitDiff(path), refreshGitStatus()])
-      }
-      const handleUnstageHunk = async (path: string, hunkPatch: string) => {
-        await window.openpi.git.unstageHunk({ path, hunkPatch, cwd: props.cwd })
-        await Promise.all([refreshGitDiff(path), refreshGitStatus()])
-      }
-      const handleRevertHunk = async (path: string, hunkPatch: string) => {
-        await window.openpi.git.revertHunk({ path, hunkPatch, cwd: props.cwd })
-        await Promise.all([refreshGitDiff(path), refreshGitStatus()])
-      }
+  const handleStageHunk = async (path: string, hunkPatch: string) => {
+    await window.openpi.git.stageHunk({ path, hunkPatch, cwd: props.cwd })
+    // gitLock in main thread already serializes; run both refreshes in parallel
+    await Promise.all([refreshGitDiff(path), refreshGitStatus()])
+  }
+  const handleUnstageHunk = async (path: string, hunkPatch: string) => {
+    await window.openpi.git.unstageHunk({ path, hunkPatch, cwd: props.cwd })
+    await Promise.all([refreshGitDiff(path), refreshGitStatus()])
+  }
+  const handleRevertHunk = async (path: string, hunkPatch: string) => {
+    await window.openpi.git.revertHunk({ path, hunkPatch, cwd: props.cwd })
+    await Promise.all([refreshGitDiff(path), refreshGitStatus()])
+  }
 
   const activateComments = (path: string) => {
     setActiveCommentPath(path)

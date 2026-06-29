@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
-  splitRawPatch,
-  extractFileHeader,
   countHunkLines,
+  extractFileHeader,
   hunkHeading,
+  splitRawPatch,
 } from '../src/components/git/hunkUtils'
 
 // A realistic multi-hunk unified diff for testing

@@ -35,12 +35,7 @@ describe('hunk mutations (integration)', () => {
     fs.mkdirSync(path.dirname(filePath), { recursive: true })
     fs.writeFileSync(
       filePath,
-      [
-        'export function add(a: number, b: number): number {',
-        '  return a + b',
-        '}',
-        '',
-      ].join('\n'),
+      ['export function add(a: number, b: number): number {', '  return a + b', '}', ''].join('\n'),
       'utf-8'
     )
     await git.add('src/foo.ts')
@@ -83,11 +78,7 @@ describe('hunk mutations (integration)', () => {
       'utf-8'
     )
 
-    const patch = makeHunkPatch(
-      'src/foo.ts',
-      '  return a + b',
-      '  return a + b + 1'
-    )
+    const patch = makeHunkPatch('src/foo.ts', '  return a + b', '  return a + b + 1')
 
     const result = await stageHunk(cwd, 'src/foo.ts', patch)
     expect(result.ok).toBe(true)
@@ -104,12 +95,9 @@ describe('hunk mutations (integration)', () => {
     // First stage the change
     fs.writeFileSync(
       filePath,
-      [
-        'export function add(a: number, b: number): number {',
-        '  return a + b + 1',
-        '}',
-        '',
-      ].join('\n'),
+      ['export function add(a: number, b: number): number {', '  return a + b + 1', '}', ''].join(
+        '\n'
+      ),
       'utf-8'
     )
     const git = simpleGit({ baseDir: cwd })
@@ -118,11 +106,7 @@ describe('hunk mutations (integration)', () => {
     expect(status.staged).toContain('src/foo.ts')
 
     // Now unstage just the hunk
-    const patch = makeHunkPatch(
-      'src/foo.ts',
-      '  return a + b',
-      '  return a + b + 1'
-    )
+    const patch = makeHunkPatch('src/foo.ts', '  return a + b', '  return a + b + 1')
     const result = await unstageHunk(cwd, 'src/foo.ts', patch)
     expect(result.ok).toBe(true)
 

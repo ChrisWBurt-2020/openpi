@@ -1,145 +1,91 @@
 /**
- * artifactWatcher — watches `.pi/artifacts/` for per-task CONTEXT.md / RESULT.md.
- *
- * The global sub-agent delegator at `~/.pi/agent/extensions/task/` writes
- * its state as files under `.pi/artifacts/task-<id>/`. When a task starts,
- * the extension creates the directory and writes `CONTEXT.md`. When the
- * sub-agent finishes, it writes `RESULT.md`. The watcher polls the
- * directory and emits an `ARTIFACT_UPDATE` IPC event whenever the set
- * of artifacts or any individual file changes.
- *
- * This replaces the previous in-memory `TaskTracker` (which tracked
- * the Anthropic-style `TaskCreate` / `TaskUpdate` tools) and sources
- * the TODO list directly from the file system.
+ * Watches `.pi/artifacts/` for `@heyhuynhgiabuu/pi-task` (`TASKS.md`) and
+ * pikit-style `TODO.md` lists. Emits `ARTIFACT_UPDATE` when content changes.
  */
 import fs from 'node:fs'
 import path from 'node:path'
 import type { BrowserWindow } from 'electron'
-import type { ArtifactUpdate, SubagentArtifact, TodoListFile } from '../../src/lib/ipc'
-import { IPC } from '../../src/lib/ipc/channels'
+import type { ArtifactUpdate, SubagentArtifact, TodoListFile } from '../../src/lib/ipc/_full'
+import { IPC } from '../../src/lib/ipc/_full'
+import {
+  extractResultSection,
+  getTasksFilePath,
+  parseMetadataFromBody,
+  readTasksFile,
+} from './piTaskArtifacts'
 
-export interface ArtifactWatcherDeps {
+const POLL_MS = 2000
+
+interface ArtifactWatcherDeps {
   getMainWindow: () => BrowserWindow | null
   getWorkspacePath: () => string | null
 }
 
 interface ArtifactSnapshot {
-  mtimeMs: number
   artifact: SubagentArtifact
 }
 
 interface TodoSnapshot {
-  mtimeMs: number
   todoFile: TodoListFile
 }
 
-const POLL_MS = 1000
+function mapPiTaskStatus(
+  status: 'active' | 'done' | 'abandoned' | null
+): SubagentArtifact['status'] {
+  if (status === 'done') return 'completed'
+  if (status === 'abandoned') return 'failed'
+  return 'running'
+}
 
-function safeRead(file: string): { content: string; mtimeMs: number } | null {
+function blockToArtifact(
+  taskId: string,
+  status: 'active' | 'done' | 'abandoned' | null,
+  body: string,
+  updatedAtMs: number,
+  artifactsDir: string
+): SubagentArtifact {
+  const metadata = parseMetadataFromBody(body)
+  const agent = metadata?.agent_type ?? 'task'
+  const prompt = (metadata?.last_prompt ?? '').trim().slice(0, 500)
+  const resultText = extractResultSection(body)
+  const filePath = getTasksFilePath(artifactsDir)
+  return {
+    id: taskId,
+    taskId,
+    conversationId: metadata?.conversation_id,
+    agent,
+    prompt: prompt || taskId,
+    context: body.trim(),
+    result: resultText,
+    status: mapPiTaskStatus(status),
+    createdAt: metadata?.created_at ? Date.parse(metadata.created_at) || updatedAtMs : updatedAtMs,
+    completedAt: status === 'done' ? updatedAtMs : null,
+    filePath,
+  }
+}
+
+function parseTodoFile(filePath: string): TodoListFile | null {
+  let content: string
   try {
-    const stat = fs.statSync(file)
-    if (!stat.isFile()) return null
-    const content = fs.readFileSync(file, 'utf8')
-    return { content, mtimeMs: stat.mtimeMs }
+    content = fs.readFileSync(filePath, 'utf-8')
   } catch {
     return null
   }
-}
-
-function dirMtime(dir: string): number {
-  try {
-    return fs.statSync(dir).mtimeMs
-  } catch {
-    return 0
+  const items: TodoListFile['items'] = []
+  for (const line of content.split('\n')) {
+    const unchecked = line.match(/^\s*-\s+\[\s\]\s+(.+)$/)
+    const checked = line.match(/^\s*-\s+\[x\]\s+(.+)$/i)
+    if (unchecked) items.push({ text: unchecked[1].trim(), checked: false })
+    else if (checked) items.push({ text: checked[1].trim(), checked: true })
   }
-}
-
-function deriveAgent(agentPath: string): string {
-  // `.pi/agents/<name>.md` → `<name>`; fallback to basename without extension.
-  const base = path.basename(agentPath, path.extname(agentPath))
-  return base || 'agent'
-}
-
-function inferStatus(resultText: string | null): SubagentArtifact['status'] {
-  if (resultText === null) return 'running'
-  const lower = resultText.toLowerCase()
-  if (lower.includes('error') || lower.includes('failed') || lower.includes('exception')) {
-    return 'failed'
-  }
-  return 'completed'
-}
-
-function parseTodoFile(file: string, artifactsDir: string): TodoSnapshot | null {
-  const read = safeRead(file)
-  if (!read) return null
-  const items = read.content
-    .split('\n')
-    .map((line) => line.match(/^\s*-\s+\[( |x|X)\]\s+(.+)\s*$/))
-    .filter((match): match is RegExpMatchArray => match !== null)
-    .map((match) => ({ text: match[2].trim(), checked: match[1].toLowerCase() === 'x' }))
-  if (items.length === 0) return null
-  return {
-    mtimeMs: read.mtimeMs,
-    todoFile: {
-      source: path.relative(artifactsDir, file),
-      openCount: items.filter((item) => !item.checked).length,
-      items,
-    },
-  }
-}
-
-function findTodoFiles(dir: string): string[] {
-  let entries: fs.Dirent[]
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true })
-  } catch {
-    return []
-  }
-
-  const files: string[] = []
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue
-    const todo = path.join(dir, entry.name, 'TODO.md')
-    if (fs.existsSync(todo)) files.push(todo)
-  }
-  return files
-}
-
-function readArtifact(taskDir: string): SubagentArtifact | null {
-  const id = path.basename(taskDir)
-  const contextFile = path.join(taskDir, 'CONTEXT.md')
-  const resultFile = path.join(taskDir, 'RESULT.md')
-  const context = safeRead(contextFile)
-  if (!context) return null
-  const result = safeRead(resultFile)
-  const contextText = context.content
-  // Parse frontmatter if present (e.g. `agent: <name>`).
-  let agent = 'agent'
-  const fmMatch = contextText.match(/^---\s*\n([\s\S]*?)\n---\s*\n/)
-  if (fmMatch) {
-    const agentLine = fmMatch[1].match(/^\s*agent:\s*(\S+)/m)
-    if (agentLine) agent = agentLine[1]
-  }
-  // Prompt is the first non-empty, non-frontmatter line.
-  const body = fmMatch ? contextText.slice(fmMatch[0].length) : contextText
-  const promptLine = body.split('\n').find((l) => l.trim().length > 0) ?? ''
-  return {
-    id,
-    agent: deriveAgent(agent),
-    prompt: promptLine.trim().slice(0, 500),
-    context: contextText,
-    result: result?.content ?? null,
-    status: inferStatus(result?.content ?? null),
-    createdAt: context.mtimeMs,
-    completedAt: result?.mtimeMs ?? null,
-    filePath: taskDir,
-  }
+  const openCount = items.filter((i) => !i.checked).length
+  return { source: path.basename(filePath), openCount, items }
 }
 
 export function startArtifactWatcher(deps: ArtifactWatcherDeps): { stop: () => void } {
   const snapshots = new Map<string, ArtifactSnapshot>()
   const todoSnapshots = new Map<string, TodoSnapshot>()
-  let lastRootMtime = 0
+  let lastTasksMtime = 0
   let timer: NodeJS.Timeout | null = null
 
   function getArtifactsDir(): string | null {
@@ -174,89 +120,82 @@ export function startArtifactWatcher(deps: ArtifactWatcherDeps): { stop: () => v
       }
       return
     }
-    if (!fs.existsSync(dir)) {
-      if (snapshots.size > 0 || todoSnapshots.size > 0 || lastRootMtime !== 0) {
-        snapshots.clear()
-        todoSnapshots.clear()
-        lastRootMtime = 0
-        emit()
-      }
-      return
-    }
 
-    const rootMtime = dirMtime(dir)
-    lastRootMtime = rootMtime
+    let dirty = false
 
-    let entries: string[]
+    const tasksPath = getTasksFilePath(dir)
+    let tasksMtime = 0
     try {
-      entries = fs.readdirSync(dir).filter((e) => e.startsWith('task-'))
+      tasksMtime = fs.statSync(tasksPath).mtimeMs
     } catch {
-      entries = []
+      tasksMtime = 0
     }
 
-    const next = new Map<string, ArtifactSnapshot>()
-    let changed = false
-
-    for (const entry of entries) {
-      const taskDir = path.join(dir, entry)
-      try {
-        if (!fs.statSync(taskDir).isDirectory()) continue
-      } catch {
-        continue
+    if (tasksMtime !== lastTasksMtime) {
+      lastTasksMtime = tasksMtime
+      dirty = true
+      const blocks = readTasksFile(dir)
+      const nextIds = new Set<string>()
+      for (const block of blocks.values()) {
+        nextIds.add(block.taskId)
+        const artifact = blockToArtifact(
+          block.taskId,
+          block.status,
+          block.body,
+          block.updatedAtMs,
+          dir
+        )
+        const prev = snapshots.get(block.taskId)
+        if (
+          !prev ||
+          prev.artifact.status !== artifact.status ||
+          prev.artifact.result !== artifact.result
+        ) {
+          snapshots.set(block.taskId, { artifact })
+        }
       }
-      const artifact = readArtifact(taskDir)
-      if (!artifact) continue
-      const prev = snapshots.get(entry)
-      if (!prev || prev.mtimeMs !== (artifact.completedAt ?? artifact.createdAt)) {
-        changed = true
+      for (const id of [...snapshots.keys()]) {
+        if (!nextIds.has(id)) {
+          snapshots.delete(id)
+        }
       }
-      next.set(entry, { mtimeMs: artifact.completedAt ?? artifact.createdAt, artifact })
     }
 
-    // Detect removals
-    for (const key of snapshots.keys()) {
-      if (!next.has(key)) changed = true
-    }
-
-    snapshots.clear()
-    for (const [k, v] of next) snapshots.set(k, v)
-
-    const nextTodos = new Map<string, TodoSnapshot>()
-    for (const file of findTodoFiles(dir)) {
-      const todo = parseTodoFile(file, dir)
-      if (!todo) continue
-      const key = todo.todoFile.source
-      const prev = todoSnapshots.get(key)
-      if (
-        !prev ||
-        prev.mtimeMs !== todo.mtimeMs ||
-        prev.todoFile.openCount !== todo.todoFile.openCount
-      ) {
-        changed = true
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true })
+      const todoNames = new Set(
+        entries.filter((e) => e.isFile() && /^TODO.*\.md$/i.test(e.name)).map((e) => e.name)
+      )
+      for (const name of todoNames) {
+        const filePath = path.join(dir, name)
+        const todoFile = parseTodoFile(filePath)
+        if (!todoFile) continue
+        const prev = todoSnapshots.get(name)
+        if (!prev || prev.todoFile.openCount !== todoFile.openCount) {
+          todoSnapshots.set(name, { todoFile })
+          dirty = true
+        }
       }
-      nextTodos.set(key, todo)
+      for (const name of [...todoSnapshots.keys()]) {
+        if (!todoNames.has(name)) {
+          todoSnapshots.delete(name)
+          dirty = true
+        }
+      }
+    } catch {
+      // artifacts dir may not exist yet
     }
 
-    for (const key of todoSnapshots.keys()) {
-      if (!nextTodos.has(key)) changed = true
-    }
-
-    todoSnapshots.clear()
-    for (const [key, value] of nextTodos) todoSnapshots.set(key, value)
-
-    if (changed) emit()
+    if (dirty) emit()
   }
 
   timer = setInterval(tick, POLL_MS)
-  // Run once immediately so the renderer gets the initial state.
   tick()
 
   return {
-    stop() {
-      if (timer) {
-        clearInterval(timer)
-        timer = null
-      }
+    stop: () => {
+      if (timer) clearInterval(timer)
+      timer = null
     },
   }
 }

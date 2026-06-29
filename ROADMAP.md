@@ -18,7 +18,7 @@ These anchors come from Pi’s design and [Mario Zechner’s writing](https://ma
 | **Extensions** | Behavior ships as user/project extensions and packages | Customizations UI + trust; never silent install |
 | **Sustainability** | MIT core; commercial tiers may appear separately on pi.dev | Depend on **tier-1 SDK only**; track upstream `earendil-works/pi` |
 
-**OpenPi product bets (not Pi core):** built-in subagent tools, goal/harness UI, and Electron-main protected paths / high-risk shell prompts are **desktop and workflow opinions**. Prefer moving new agent semantics into **extensions** over growing a senpi-style builtin pile in the host.
+**OpenPi product bets (not Pi core):** built-in subagent tools and Electron-main protected paths / high-risk shell prompts are **desktop and workflow opinions**. Prefer moving new agent semantics into **extensions** over growing a senpi-style builtin pile in the host.
 
 **Explicit non-pursuits:** Kun-style custom runtime; requirement-first SDD wizards; influencer “extension stack” presets as product identity; senpi/OMO-style permission/todo/dynamic-prompt forks inside OpenPi; agent armies and velocity features that skip human review.
 
@@ -31,7 +31,6 @@ Done so far:
 - SolidJS workbench UI with session sidebar, workspace rail, conversation pane, model controls, steering/follow-up queues, command palette, customizations modal, terminal/output panel (multi-tab), Git panel, file tree/search, file viewer, split diff viewer, and unified Review tab.
 - Session/workspace read model in SQLite, last-workspace restore, session search/sort/group controls, pinned/archive flows, and new-session hero metadata (workspace path, Git branch, last modified).
 - Customizations inventory for Extensions, Skills, Prompts, Themes, Packages, Settings, General preferences, and Keybindings; command palette (`⇧⌘P`).
-- **Goal/harness v2 loop**: `/goal` controller with 7 harness tools, product docs, story browser, decision records, test matrix.
 - **Conversation polish**: live token counter, code line numbers, streaming cursor fix, entry animation, responsive images, and composer line-comment context chips.
 - **File editor improvements**: CodeMirror 6 editor, format-on-save (Biome), word wrap toggle, FORMAT_FILE IPC, find-with-replace.
 - **Extensions UI**: enable/disable toggle per extension, preference persistence, reload button.
@@ -40,7 +39,7 @@ Done so far:
 - **Harness lint pre-commit hook** and full docs/ product documentation directory.
 - Runtime OpenPi branding: app name/version from Electron main, shared metadata, OpenPi icon set.
 - CI/CD baseline: PR/main verification, tag-triggered beta release across macOS/Windows/Linux.
-- **Built-in subagents**: three Pi SDK-native tools (`Agent`, `get_subagent_result`, `steer_subagent`) registered as `customTools` in the sidecar session. 5 built-in agent profiles: Worker, Explorer, Scout, Planner, Reviewer with dedicated prompt files and explicit tool allowlists (srcwalk, webclaw, pi-search per agent role). Background queueing (4 max concurrent) with real-time status streaming to the renderer.
+- **Pi-task delegation UI**: artifact watcher + tray for `@heyhuynhgiabuu/pi-task` (`TASKS.md`, `task-sessions.json`). No built-in `Agent` customTools on the sidecar — delegation is the pi-task package.
 - **Custom agent discovery**: `.pi/agents/*.md` + `~/.pi/agent/agents/*.md` files with full frontmatter support (display_name, tools, disallowed_tools, model, thinking, max_turns, prompt_mode, isolated, enabled). Project > global > builtin priority with workspace-trust gating for project agents.
 - **Subagent widget**: live status tray with Bot icon, elapsed timer, expandable detail panel (ID/status/turns/tools/4K result preview), background completion notification banner. Status bugfixes: onToolEnd no longer overwrites background status; clearFinished preserves background agents.
 - **@mention autocomplete**: `@` in composer shows subagents + files with section headers, Bot icon in accent box, capital-case display, keyboard navigation across combined list. Agent chip replaces raw text; `@name` prepended invisibly on send.
@@ -50,7 +49,7 @@ Done so far:
 
 Still beta-blocking:
 - macOS notarization and Windows code signing not configured (see Phase 6 slice 10).
-- Phase 7 test evidence (`docs/TEST_MATRIX.md`) and harness lint gaps before broad beta.
+- Phase 7 automated test coverage gaps (`npm test`) before broad beta.
 - CI lint/test must stay green.
 
 ---
@@ -461,27 +460,25 @@ Acceptance criteria:
 
 | P | Slice | Why |
 |---|---|---|
-| **P0** | **Testing / TEST_MATRIX** | Evidence for IPC, session index, PTY, permission gates; harness lint clean — matches upstream skepticism of unreviewed slop. |
+| **P0** | **Automated tests** | `npm test` covers IPC, session index, PTY, permission gates; expand Vitest where gaps remain. |
 | **P0** | **Unified Review tab MVP** ✅ | Human quality gate after agent writes: Review source dropdown for Git changes vs Last turn changes, snapshot-backed file accordions, Keep/Revert/Revert all, without blocking Pi’s tool loop. |
 | **P0** | **Live token/cost per turn** | Inspectability during streaming, not only post-`agent_end`. |
 | **P1** | **Session map v2** | Pi’s tree model visible: branches, compaction, labels, navigate/fork. |
 | **P1** | **Subagent/task card polish** | Expand/collapse, abort — UI on existing OpenPi subagent tools; don’t add new agent runtimes. |
-| **P2** | **Plan overlay polish** | Goal/harness UX only; optional, not a Kun-style plan product. |
 | **P2** | **Workbench context bridge** | cwd / visible file / terminal snippet for steering — narrow scope. |
 | **P2** | **Auto-updater** | Release hygiene once signing (Phase 6 #10) exists. |
 
 Build notes:
-1. **Testing strategy execution** — close `docs/TEST_MATRIX.md` gaps; IPC Zod roundtrips, fake `AgentSession` fixtures, SQLite upserts, PTY smoke, permission tests.
+1. **Testing strategy execution** — IPC Zod roundtrips, fake `AgentSession` fixtures, SQLite upserts, PTY smoke, permission tests in Vitest.
 2. **Unified Review MVP** — shipped as a Review tab with Git changes / Last turn changes sources. Last-turn changes are snapshot-backed, coalesced per file, rendered as expandable file rows with proper diffs and Keep/Revert/Revert all. Review diffs now support OpenCode-style line comments: hover `+`, content-row click/drag selection, multi-line highlight, saved annotations, composer chips, and structured `<file_comment>` prompt context. Later work: hunk-level review and richer merge UI.
 3. **Live token/cost per turn** — conversation header during `message_update` / `turn_end`.
 4. **Session map v2** — tree UI over JSONL `parentId` / compaction entries.
 5. **Subagent/task cards** — richer cards for `Agent` / task tooling already in use.
-6. **Plan overlay** — step timing + persist for `.openpi-plan.json` / goal state.
 7. **Context bridge** — optional composer attachment of “what user is viewing.”
 8. **Auto-updater** — `electron-updater` wired to release channel.
 
 Acceptance criteria:
-- `npm test` covers IPC, session index, PTY, permission gates; TEST_MATRIX lint 0 missing evidence.
+- `npm test` green for IPC, session index, PTY, permission gates (expand suites as needed).
 - Agent tool edits can be reviewed in the unified Review tab as Last turn changes with safe snapshot-backed Keep/Revert/Revert all (P0 MVP shipped); diff line comments preserve selected file snippets as structured prompt context; hunk-level/pre-apply review remains future polish.
 - Turn-level token/cost visible while streaming (P0).
 - Session tree navigable with fork actions (P1).

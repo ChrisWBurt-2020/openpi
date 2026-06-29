@@ -1,11 +1,6 @@
 /**
- * SubagentFileWidget — renders the list of in-flight and completed
- * sub-agent tasks written to `.pi/artifacts/task-<id>/` by the global
- * `~/.pi/agent/extensions/task/` delegator.
- *
- * Each entry shows: status icon, agent name, prompt preview, and a
- * collapsible result preview. Renders nothing when there are no
- * artifacts. Auto-collapses when all tasks are completed.
+ * Task tray — running `task` delegations from `@heyhuynhgiabuu/pi-task`.
+ * State is read from `.pi/artifacts/TASKS.md` (### <task-id> blocks).
  */
 
 import { CheckCircle2, Circle, CircleAlert, Loader2, Square, SquareCheck, X } from 'lucide-solid'
@@ -54,9 +49,9 @@ export function SubagentFileWidget(props: SubagentFileWidgetProps) {
 
   return (
     <Show when={visible().length > 0}>
-      <section class="subagent-file-widget" aria-label="Sub-agent tasks">
+      <section class="subagent-file-widget" aria-label="Pi-task delegations">
         <header class="subagent-file-widget__header">
-          <span class="subagent-file-widget__title">Sub-agent tasks</span>
+          <span class="subagent-file-widget__title">Tasks</span>
           <button
             type="button"
             class="subagent-file-widget__dismiss"

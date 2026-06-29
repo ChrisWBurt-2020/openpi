@@ -13,35 +13,35 @@ import type {
   GitStatusResult,
   GitSyncResult,
 } from '../../src/lib/ipc'
-    import {
-      fileTreeResultSchema,
-      gitCheckoutBranchResultSchema,
-      gitCheckoutBranchSchema,
-      gitCommitDiffRequestSchema,
-      gitCommitSchema,
-      gitCreateBranchResultSchema,
-      gitCreateBranchSchema,
-      gitDiffRequestSchema,
-      gitDiscardSchema,
-      gitFileDiffSchema,
-      gitHistoryRequestSchema,
-      gitHistoryResultSchema,
-      gitRefsResultSchema,
-      gitStageSchema,
-      gitStashActionResultSchema,
-      gitStashActionSchema,
-      gitSyncResultSchema,
-      gitSyncSchema,
-      gitUnstageSchema,
-      gitBranchDiffRequestSchema,
-      gitHunkActionSchema,
-      gitStagedDiffRequestSchema,
-      IPC,
-      searchFileContentsRequestSchema,
-    } from '../../src/lib/ipc'
-    import type * as GitHost from '../git/gitHost'
-    import type { filterBlockedPaths as filterProtectedPaths } from '../services/protectedPaths'
-    import { enrichTree } from './gitFileTree'
+import {
+  fileTreeResultSchema,
+  gitBranchDiffRequestSchema,
+  gitCheckoutBranchResultSchema,
+  gitCheckoutBranchSchema,
+  gitCommitDiffRequestSchema,
+  gitCommitSchema,
+  gitCreateBranchResultSchema,
+  gitCreateBranchSchema,
+  gitDiffRequestSchema,
+  gitDiscardSchema,
+  gitFileDiffSchema,
+  gitHistoryRequestSchema,
+  gitHistoryResultSchema,
+  gitHunkActionSchema,
+  gitRefsResultSchema,
+  gitStagedDiffRequestSchema,
+  gitStageSchema,
+  gitStashActionResultSchema,
+  gitStashActionSchema,
+  gitSyncResultSchema,
+  gitSyncSchema,
+  gitUnstageSchema,
+  IPC,
+  searchFileContentsRequestSchema,
+} from '../../src/lib/ipc'
+import type * as GitHost from '../git/gitHost'
+import type { filterBlockedPaths as filterProtectedPaths } from '../services/protectedPaths'
+import { enrichTree } from './gitFileTree'
 
 interface ConfirmMutationOptions {
   title: string
@@ -65,91 +65,91 @@ function resolveGitCwd(deps: GitIpcDeps): string | null {
   return deps.getCwd() ?? deps.getDeferredWorkspace()
 }
 
-    function requireCwd(deps: GitIpcDeps): string | null {
-      return resolveGitCwd(deps)
-    }
+function requireCwd(deps: GitIpcDeps): string | null {
+  return resolveGitCwd(deps)
+}
 
-    /**
-     * Verify that a hunk patch's `+++ b/<path>` (or `--- a/<path>` for renames/new
-     * files) matches the requested filePath. Defends against a compromised renderer
-     * shipping a patch that targets a different file than the user clicked on.
-     */
-    function assertHunkTargetsFile(hunkPatch: string, filePath: string): void {
-      const normalizedExpected = filePath.replace(/^\.\//, '').trim()
-      const lines = hunkPatch.split(/\r?\n/)
-      let sawNewPath = false
-      let sawOldPath = false
-      for (const line of lines) {
-        if (line.startsWith('diff --git ')) {
-          // Once we hit a new diff header, we only care about subsequent target lines
-          if (sawNewPath) return // past the first diff header, stop
-          continue
-        }
-        if (line.startsWith('new file mode') || line.startsWith('deleted file mode')) {
-          // Allowed; target check still applies below
-        }
-        if (line.startsWith('rename from ')) {
-          // Source path: must equal filePath
-          const src = line.slice('rename from '.length).trim()
-          if (path.basename(src) !== path.basename(normalizedExpected)) {
-            throw new Error(
-              `Hunk patch rename source does not match requested file (expected ${normalizedExpected}, got ${src})`
-            )
-          }
-          sawOldPath = true
-          continue
-        }
-        if (line.startsWith('rename to ')) {
-          const dst = line.slice('rename to '.length).trim()
-          if (path.basename(dst) !== path.basename(normalizedExpected)) {
-            throw new Error(
-              `Hunk patch rename target does not match requested file (expected ${normalizedExpected}, got ${dst})`
-            )
-          }
-          sawNewPath = true
-          continue
-        }
-        if (line.startsWith('--- ')) {
-          const src = line.slice(4).trim()
-          // Skip the /dev/null case
-          if (src === '/dev/null') {
-            sawOldPath = true
-            continue
-          }
-          if (src.startsWith('a/')) {
-            if (src.slice(2) !== normalizedExpected) {
-              throw new Error(
-                `Hunk patch source path does not match requested file (expected ${normalizedExpected}, got ${src.slice(2)})`
-              )
-            }
-            sawOldPath = true
-          }
-          continue
-        }
-        if (line.startsWith('+++ ')) {
-          const dst = line.slice(4).trim()
-          if (dst === '/dev/null') {
-            sawNewPath = true
-            continue
-          }
-          if (!dst.startsWith('b/')) {
-            throw new Error(`Malformed hunk patch: missing b/ prefix on +++ line (got ${dst})`)
-          }
-          if (dst.slice(2) !== normalizedExpected) {
-            throw new Error(
-              `Hunk patch target path does not match requested file (expected ${normalizedExpected}, got ${dst.slice(2)})`
-            )
-          }
-          sawNewPath = true
-          // Once we see the new path line, we've verified the first file in the patch
-          return
-        }
-      }
-      if (!sawNewPath) {
-        throw new Error('Hunk patch missing +++ header (no target file)')
-      }
+/**
+ * Verify that a hunk patch's `+++ b/<path>` (or `--- a/<path>` for renames/new
+ * files) matches the requested filePath. Defends against a compromised renderer
+ * shipping a patch that targets a different file than the user clicked on.
+ */
+function assertHunkTargetsFile(hunkPatch: string, filePath: string): void {
+  const normalizedExpected = filePath.replace(/^\.\//, '').trim()
+  const lines = hunkPatch.split(/\r?\n/)
+  let sawNewPath = false
+  let sawOldPath = false
+  for (const line of lines) {
+    if (line.startsWith('diff --git ')) {
+      // Once we hit a new diff header, we only care about subsequent target lines
+      if (sawNewPath) return // past the first diff header, stop
+      continue
     }
-    
+    if (line.startsWith('new file mode') || line.startsWith('deleted file mode')) {
+      // Allowed; target check still applies below
+    }
+    if (line.startsWith('rename from ')) {
+      // Source path: must equal filePath
+      const src = line.slice('rename from '.length).trim()
+      if (path.basename(src) !== path.basename(normalizedExpected)) {
+        throw new Error(
+          `Hunk patch rename source does not match requested file (expected ${normalizedExpected}, got ${src})`
+        )
+      }
+      sawOldPath = true
+      continue
+    }
+    if (line.startsWith('rename to ')) {
+      const dst = line.slice('rename to '.length).trim()
+      if (path.basename(dst) !== path.basename(normalizedExpected)) {
+        throw new Error(
+          `Hunk patch rename target does not match requested file (expected ${normalizedExpected}, got ${dst})`
+        )
+      }
+      sawNewPath = true
+      continue
+    }
+    if (line.startsWith('--- ')) {
+      const src = line.slice(4).trim()
+      // Skip the /dev/null case
+      if (src === '/dev/null') {
+        sawOldPath = true
+        continue
+      }
+      if (src.startsWith('a/')) {
+        if (src.slice(2) !== normalizedExpected) {
+          throw new Error(
+            `Hunk patch source path does not match requested file (expected ${normalizedExpected}, got ${src.slice(2)})`
+          )
+        }
+        sawOldPath = true
+      }
+      continue
+    }
+    if (line.startsWith('+++ ')) {
+      const dst = line.slice(4).trim()
+      if (dst === '/dev/null') {
+        sawNewPath = true
+        continue
+      }
+      if (!dst.startsWith('b/')) {
+        throw new Error(`Malformed hunk patch: missing b/ prefix on +++ line (got ${dst})`)
+      }
+      if (dst.slice(2) !== normalizedExpected) {
+        throw new Error(
+          `Hunk patch target path does not match requested file (expected ${normalizedExpected}, got ${dst.slice(2)})`
+        )
+      }
+      sawNewPath = true
+      // Once we see the new path line, we've verified the first file in the patch
+      return
+    }
+  }
+  if (!sawNewPath) {
+    throw new Error('Hunk patch missing +++ header (no target file)')
+  }
+}
+
 export function registerGitIpc(deps: GitIpcDeps): void {
   deps.ipcMain.on(IPC.GIT_PANEL_MOUNTED, () => {
     const cwd = resolveGitCwd(deps)
@@ -158,41 +158,48 @@ export function registerGitIpc(deps: GitIpcDeps): void {
     void deps.restartGitMonitoring(cwd)
   })
 
-  deps.ipcMain.handle(IPC.GIT_STATUS, async (_event, cwdFromRenderer?: string): Promise<GitStatusResult | null> => {
-    const cwd = cwdFromRenderer ?? resolveGitCwd(deps)
-    console.log('[openpi:git] GIT_STATUS cwd=', cwd, 'fromRenderer=', !!cwdFromRenderer)
-    if (!cwd) return null
-    try {
-      const git = await deps.getGitHost()
-      const result = await git.getGitStatus(cwd)
-      console.log('[openpi:git] GIT_STATUS success, files=', result?.files?.length)
-      return result
-    } catch (err) {
-      console.error('[openpi:git-status] error for cwd', cwd, err)
-      return null
-    }
-  })
-
-    deps.ipcMain.handle(IPC.GIT_DIFF, async (_event, raw: unknown): Promise<GitFileDiff | null> => {
-      const parsed = gitDiffRequestSchema.parse(raw)
-      const cwd = resolveGitCwd(deps) ?? parsed.cwd
-      if (!cwd) {
-        console.warn('[openpi:git] GIT_DIFF no cwd (path=${parsed.path})')
-        return null
-      }
-      const git = await deps.getGitHost()
+  deps.ipcMain.handle(
+    IPC.GIT_STATUS,
+    async (_event, cwdFromRenderer?: string): Promise<GitStatusResult | null> => {
+      const cwd = cwdFromRenderer ?? resolveGitCwd(deps)
+      console.log('[openpi:git] GIT_STATUS cwd=', cwd, 'fromRenderer=', !!cwdFromRenderer)
+      if (!cwd) return null
       try {
-        const result = await git.getGitFileDiff(cwd, parsed.path, {
-          scope: parsed.scope,
-          baseBranch: parsed.baseBranch,
-        })
-        console.log(`[openpi:git] GIT_DIFF ok cwd=${cwd} path=${parsed.path} scope=${parsed.scope ?? 'auto'} hasOld=${!!result?.oldContent} hasNew=${!!result?.newContent}`)
+        const git = await deps.getGitHost()
+        const result = await git.getGitStatus(cwd)
+        console.log('[openpi:git] GIT_STATUS success, files=', result?.files?.length)
         return result
       } catch (err) {
-        console.warn(`[openpi:git] GIT_DIFF error cwd=${cwd} path=${parsed.path}: ${(err as Error).message}`)
-        throw err
+        console.error('[openpi:git-status] error for cwd', cwd, err)
+        return null
       }
-    })
+    }
+  )
+
+  deps.ipcMain.handle(IPC.GIT_DIFF, async (_event, raw: unknown): Promise<GitFileDiff | null> => {
+    const parsed = gitDiffRequestSchema.parse(raw)
+    const cwd = resolveGitCwd(deps) ?? parsed.cwd
+    if (!cwd) {
+      console.warn('[openpi:git] GIT_DIFF no cwd (path=${parsed.path})')
+      return null
+    }
+    const git = await deps.getGitHost()
+    try {
+      const result = await git.getGitFileDiff(cwd, parsed.path, {
+        scope: parsed.scope,
+        baseBranch: parsed.baseBranch,
+      })
+      console.log(
+        `[openpi:git] GIT_DIFF ok cwd=${cwd} path=${parsed.path} scope=${parsed.scope ?? 'auto'} hasOld=${!!result?.oldContent} hasNew=${!!result?.newContent}`
+      )
+      return result
+    } catch (err) {
+      console.warn(
+        `[openpi:git] GIT_DIFF error cwd=${cwd} path=${parsed.path}: ${(err as Error).message}`
+      )
+      throw err
+    }
+  })
 
   deps.ipcMain.handle(IPC.GIT_STAGE, async (_event, raw: unknown): Promise<void> => {
     const cwd = requireCwd(deps)

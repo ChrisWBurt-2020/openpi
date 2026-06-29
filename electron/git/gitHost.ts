@@ -19,32 +19,32 @@ import { withGitLock } from './gitLock'
 export { generateCommitMessage } from './gitCommitMessage'
 // Read operations
 export {
+  getGitBranchBase,
+  getGitBranchDiff,
   getGitCommitDiff,
   getGitFileDiff,
   getGitRemoteUrl,
+  getGitStagedDiff,
   getGitStatus,
   getWorkspaceSummary,
-  getGitStagedDiff,
-  getGitBranchDiff,
-  getGitBranchBase,
 } from './gitDiffStatus'
 export { getFileTree, startFileTreeWatch, stopFileTreeWatch } from './gitFileTree'
 export { getGitHistory, getGitRefs } from './gitHistory'
+export type { HunkActionResult } from './gitMutations'
 export {
   commitFiles,
   createBranch,
   discardFile,
+  revertHunk,
   stageFile,
+  stageHunk,
   stashApply,
   stashDrop,
   stashPop,
   syncRemote,
   unstageFile,
-  stageHunk,
   unstageHunk,
-  revertHunk,
 } from './gitMutations'
-export type { HunkActionResult } from './gitMutations'
 export { searchFileContents } from './gitSearch'
 
 // ─── Polling watcher ────────────────────────────────────────────────────────

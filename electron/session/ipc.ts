@@ -1,17 +1,17 @@
-    import * as crypto from 'node:crypto'
-    import { type BrowserWindow, dialog, type IpcMain } from 'electron'
-    import type {
-      BashExecutionResult,
-      OutputLine,
-      SessionHistoryPage,
-      SessionInfo,
-      SessionListItem,
-      SessionReady,
-      SessionStats,
-      SessionTreeResponse,
-      UsageSummary,
-      WorkspaceInfo,
-    } from '../../src/lib/ipc'
+import * as crypto from 'node:crypto'
+import { type BrowserWindow, dialog, type IpcMain } from 'electron'
+import type {
+  BashExecutionResult,
+  OutputLine,
+  SessionHistoryPage,
+  SessionInfo,
+  SessionListItem,
+  SessionReady,
+  SessionStats,
+  SessionTreeResponse,
+  UsageSummary,
+  WorkspaceInfo,
+} from '../../src/lib/ipc'
 import {
   compactSessionSchema,
   forkSessionSchema,

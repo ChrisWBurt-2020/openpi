@@ -57,7 +57,9 @@ export function registerFileIpc(deps: FileIpcDeps): void {
     try {
       full = resolveWorkspaceRelativePath(cwd, relPath, 'read')
     } catch (err) {
-      console.warn(`[openpi:fs] READ_FILE outside workspace (cwd=${cwd} path=${relPath}): ${(err as Error).message}`)
+      console.warn(
+        `[openpi:fs] READ_FILE outside workspace (cwd=${cwd} path=${relPath}): ${(err as Error).message}`
+      )
       return null
     }
     try {
@@ -73,49 +75,51 @@ export function registerFileIpc(deps: FileIpcDeps): void {
       }
       return { content: rawContent, size, truncated: false }
     } catch (err) {
-      console.warn(`[openpi:fs] READ_FILE read error (cwd=${cwd} path=${relPath}): ${(err as Error).message}`)
+      console.warn(
+        `[openpi:fs] READ_FILE read error (cwd=${cwd} path=${relPath}): ${(err as Error).message}`
+      )
       return null
     }
   })
 
-      deps.ipcMain.handle(IPC.WRITE_FILE, async (_event, raw: unknown): Promise<void> => {
-        const parsed = writeFileRequestSchema.parse(raw)
-        const cwd = deps.getCwd() ?? parsed.cwd
-        if (!cwd) {
-          console.warn(`[openpi:fs] WRITE_FILE no cwd (path=${parsed.path})`)
-          throw new Error('No active workspace')
-        }
-        const { path: relPath, content } = parsed
-        const full = resolveWorkspaceRelativePath(cwd, relPath, 'write')
-        const violation = checkProtectedPath(full, cwd)
-        if (violation?.level === 'hard') {
-          throw new Error(`Refusing to write protected path: ${violation.reason}`)
-        }
-        if (violation) {
-          const approved = await deps.confirmHighRiskMutation({
-            title: 'Confirm protected file write',
-            message: `Write to ${path.basename(full)}?`,
-            detail: `${violation.reason}\n\nPath: ${full}`,
-          })
-          if (!approved) return
-        }
-        fs.writeFileSync(full, content, 'utf-8')
-        deps.getMainWindow()?.webContents.send(IPC.FILE_TREE_CHANGED)
-        try {
-          const git = await deps.getGitHost()
-          deps.getMainWindow()?.webContents.send(IPC.GIT_STATUS_CHANGED, await git.getGitStatus(cwd))
-        } catch {}
+  deps.ipcMain.handle(IPC.WRITE_FILE, async (_event, raw: unknown): Promise<void> => {
+    const parsed = writeFileRequestSchema.parse(raw)
+    const cwd = deps.getCwd() ?? parsed.cwd
+    if (!cwd) {
+      console.warn(`[openpi:fs] WRITE_FILE no cwd (path=${parsed.path})`)
+      throw new Error('No active workspace')
+    }
+    const { path: relPath, content } = parsed
+    const full = resolveWorkspaceRelativePath(cwd, relPath, 'write')
+    const violation = checkProtectedPath(full, cwd)
+    if (violation?.level === 'hard') {
+      throw new Error(`Refusing to write protected path: ${violation.reason}`)
+    }
+    if (violation) {
+      const approved = await deps.confirmHighRiskMutation({
+        title: 'Confirm protected file write',
+        message: `Write to ${path.basename(full)}?`,
+        detail: `${violation.reason}\n\nPath: ${full}`,
       })
+      if (!approved) return
+    }
+    fs.writeFileSync(full, content, 'utf-8')
+    deps.getMainWindow()?.webContents.send(IPC.FILE_TREE_CHANGED)
+    try {
+      const git = await deps.getGitHost()
+      deps.getMainWindow()?.webContents.send(IPC.GIT_STATUS_CHANGED, await git.getGitStatus(cwd))
+    } catch {}
+  })
 
-      deps.ipcMain.handle(IPC.DELETE_FILE, async (event, raw: unknown): Promise<unknown> => {
-        const parsed = deleteFileRequestSchema.parse(raw)
-        const cwd = deps.getCwd() ?? parsed.cwd
-        if (!cwd) {
-          console.warn(`[openpi:fs] DELETE_FILE no cwd (path=${parsed.path})`)
-          throw new Error('No active workspace')
-        }
-        const { path: relPath } = parsed
-        const full = resolveWorkspaceRelativePath(cwd, relPath, 'delete')
+  deps.ipcMain.handle(IPC.DELETE_FILE, async (event, raw: unknown): Promise<unknown> => {
+    const parsed = deleteFileRequestSchema.parse(raw)
+    const cwd = deps.getCwd() ?? parsed.cwd
+    if (!cwd) {
+      console.warn(`[openpi:fs] DELETE_FILE no cwd (path=${parsed.path})`)
+      throw new Error('No active workspace')
+    }
+    const { path: relPath } = parsed
+    const full = resolveWorkspaceRelativePath(cwd, relPath, 'delete')
 
     if (isGitMetadataPath(relPath)) {
       throw new Error('Refusing to delete Git metadata')
@@ -153,14 +157,14 @@ export function registerFileIpc(deps: FileIpcDeps): void {
     return deleteFileResultSchema.parse({ trashed: true })
   })
 
-      deps.ipcMain.handle(IPC.RENAME_FILE, async (_event, raw: unknown): Promise<string> => {
-        const parsed = renameFileRequestSchema.parse(raw)
-        const cwd = deps.getCwd() ?? parsed.cwd
-        if (!cwd) {
-          console.warn(`[openpi:fs] RENAME_FILE no cwd (path=${parsed.path})`)
-          throw new Error('No active workspace')
-        }
-        const { path: relPath, newName } = parsed
+  deps.ipcMain.handle(IPC.RENAME_FILE, async (_event, raw: unknown): Promise<string> => {
+    const parsed = renameFileRequestSchema.parse(raw)
+    const cwd = deps.getCwd() ?? parsed.cwd
+    if (!cwd) {
+      console.warn(`[openpi:fs] RENAME_FILE no cwd (path=${parsed.path})`)
+      throw new Error('No active workspace')
+    }
+    const { path: relPath, newName } = parsed
     if (newName.includes('/') || newName.includes('\\') || newName === '.' || newName === '..') {
       throw new Error(`Invalid name: ${newName}`)
     }
@@ -181,14 +185,14 @@ export function registerFileIpc(deps: FileIpcDeps): void {
     return path.relative(cwd, target)
   })
 
-      deps.ipcMain.handle(IPC.COPY_FILE, async (_event, raw: unknown): Promise<string> => {
-        const parsed = copyFileRequestSchema.parse(raw)
-        const cwd = deps.getCwd() ?? parsed.cwd
-        if (!cwd) {
-          console.warn(`[openpi:fs] COPY_FILE no cwd (path=${parsed.path})`)
-          throw new Error('No active workspace')
-        }
-        const { path: relPath, target: relTarget } = parsed
+  deps.ipcMain.handle(IPC.COPY_FILE, async (_event, raw: unknown): Promise<string> => {
+    const parsed = copyFileRequestSchema.parse(raw)
+    const cwd = deps.getCwd() ?? parsed.cwd
+    if (!cwd) {
+      console.warn(`[openpi:fs] COPY_FILE no cwd (path=${parsed.path})`)
+      throw new Error('No active workspace')
+    }
+    const { path: relPath, target: relTarget } = parsed
     const src = resolveWorkspaceRelativePath(cwd, relPath, 'copy')
     let dest: string
     if (relTarget) {
@@ -216,14 +220,14 @@ export function registerFileIpc(deps: FileIpcDeps): void {
     return path.relative(cwd, dest)
   })
 
-      deps.ipcMain.handle(IPC.FORMAT_FILE, async (_event, raw: unknown): Promise<string> => {
-        const parsed = formatFileRequestSchema.parse(raw)
-        const cwd = deps.getCwd() ?? parsed.cwd
-        if (!cwd) {
-          console.warn(`[openpi:fs] FORMAT_FILE no cwd (path=${parsed.path})`)
-          throw new Error('No active workspace')
-        }
-        const { path: relPath } = parsed
+  deps.ipcMain.handle(IPC.FORMAT_FILE, async (_event, raw: unknown): Promise<string> => {
+    const parsed = formatFileRequestSchema.parse(raw)
+    const cwd = deps.getCwd() ?? parsed.cwd
+    if (!cwd) {
+      console.warn(`[openpi:fs] FORMAT_FILE no cwd (path=${parsed.path})`)
+      throw new Error('No active workspace')
+    }
+    const { path: relPath } = parsed
     const full = path.resolve(cwd, relPath)
     const sep = path.sep
     if (full !== cwd && !full.startsWith(cwd + sep)) {

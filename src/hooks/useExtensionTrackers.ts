@@ -1,22 +1,12 @@
 /**
- * useExtensionTrackers — manages Pi extension tracker instances (ask, subagents).
- *
- * SolidJS hook encapsulating AskTracker and SubagentTracker lifecycle,
- * providing reactive signals derived from session events.
- *
- * TODO list tracking was moved to `useSubagentFileTracker` which watches
- * `.pi/artifacts/task-<id>/` directly. The Anthropic-style
- * `TaskCreate`/`TaskUpdate` tools are no longer tracked here.
+ * Reactive `task` tool progress from pi-task extension events.
  */
-import { batch, createSignal } from 'solid-js'
-import {
-  type AskState,
-  AskTracker,
-  SubagentTracker,
-  type TrackedAgent,
-} from '../lib/extensionTrackers'
+import { createSignal } from 'solid-js'
+import { TaskTracker, type TrackedTask } from '../lib/extensionTrackers'
 
-export interface SubagentNotification {
+export type { TrackedTask }
+
+export interface TaskNotification {
   id: string
   description: string
   status: 'completed' | 'failed'
@@ -24,64 +14,20 @@ export interface SubagentNotification {
 }
 
 export function useExtensionTrackers() {
-  const _askTracker = new AskTracker()
-  const _subagentTracker = new SubagentTracker()
-  const _notifiedAgentIds = new Set<string>()
+  const tracker = new TaskTracker()
+  const notified = new Set<string>()
 
-  const [askState, setAskState] = createSignal<AskState | null>(null)
-  const [agents, setAgents] = createSignal<TrackedAgent[]>([])
-  const [subagentNotification, setSubagentNotification] = createSignal<SubagentNotification | null>(
-    null
-  )
+  const [tasks, setTasks] = createSignal<TrackedTask[]>([])
+  const [taskNotification, setTaskNotification] = createSignal<TaskNotification | null>(null)
 
-  const updateSnapshots = () => {
-    batch(() => {
-      setAskState(_askTracker.snapshot())
-      setAgents(_subagentTracker.snapshot())
-    })
-  }
+  const refresh = () => setTasks(tracker.snapshot())
 
-  /** Dispatch a session event to the relevant tracker. Returns true if state changed. */
   const dispatchEvent = (event: Record<string, unknown>, eventType: string): boolean => {
     let changed = false
 
-    if (eventType === 'openpi_subagent_update') {
-      if (_subagentTracker.onSubagentUpdate(event)) {
-        setAgents(_subagentTracker.snapshot())
-      }
-
-      const subEvent = event as {
-        agent_id?: string
-        status?: string
-        background?: boolean
-        description?: string
-        result?: string
-      }
-      const agentStatus = subEvent.status
-      if (
-        subEvent.agent_id &&
-        !_notifiedAgentIds.has(subEvent.agent_id) &&
-        (agentStatus === 'completed' || agentStatus === 'failed')
-      ) {
-        _notifiedAgentIds.add(subEvent.agent_id)
-        setSubagentNotification({
-          id: subEvent.agent_id,
-          description: String(subEvent.description ?? 'Agent task'),
-          status: agentStatus as 'completed' | 'failed',
-          result: subEvent.result,
-        })
-        // Auto-dismiss after 8 seconds
-        setTimeout(() => setSubagentNotification(null), 8000)
-      }
-      return true
-    }
-
     if (eventType === 'tool_execution_start') {
       const e = event as { toolCallId?: string; toolName?: string; args?: Record<string, unknown> }
-      changed =
-        _askTracker.onToolStart(e.toolCallId ?? '', e.toolName ?? '', e.args ?? {}) || changed
-      changed =
-        _subagentTracker.onToolStart(e.toolCallId ?? '', e.toolName ?? '', e.args ?? {}) || changed
+      changed = tracker.onToolStart(e.toolCallId ?? '', e.toolName ?? '', e.args ?? {}) || changed
     }
 
     if (eventType === 'tool_execution_end') {
@@ -90,45 +36,65 @@ export function useExtensionTrackers() {
         toolName?: string
         result?: unknown
         isError?: boolean
+        details?: Record<string, unknown>
       }
-      const id = e.toolCallId ?? ''
-      const name = e.toolName ?? ''
       const result = typeof e.result === 'string' ? e.result : JSON.stringify(e.result ?? '')
-      changed = _askTracker.onToolEnd(id, name, Boolean(e.isError)) || changed
-      changed = _subagentTracker.onToolEnd(id, name, result, Boolean(e.isError)) || changed
+      const details =
+        e.details && typeof e.details === 'object'
+          ? (e.details as Record<string, unknown>)
+          : undefined
+      changed =
+        tracker.onToolEnd(
+          e.toolCallId ?? '',
+          e.toolName ?? '',
+          result,
+          Boolean(e.isError),
+          details
+        ) || changed
+
+      if (changed && !e.isError) {
+        const snap = tracker.snapshot()
+        const ended = snap.find((t) => t.tempId === (e.toolCallId ?? ''))
+        if (
+          ended &&
+          !ended.background &&
+          (ended.status === 'completed' || ended.status === 'failed') &&
+          !notified.has(ended.tempId)
+        ) {
+          notified.add(ended.tempId)
+          setTaskNotification({
+            id: ended.taskId ?? ended.tempId,
+            description: ended.description,
+            status: ended.status === 'failed' ? 'failed' : 'completed',
+            result: ended.result,
+          })
+          setTimeout(() => setTaskNotification(null), 8000)
+        }
+      }
     }
 
-    if (changed) updateSnapshots()
+    if (changed) refresh()
     return changed
   }
 
   const clearFinished = () => {
-    _subagentTracker.clearFinished()
-    setAgents(_subagentTracker.snapshot())
-  }
-
-  const clearAsk = () => {
-    _askTracker.clear()
-    setAskState(null)
+    tracker.clearFinished()
+    refresh()
   }
 
   const clearAll = () => {
-    _askTracker.clear()
-    _subagentTracker.clear()
-    _notifiedAgentIds.clear()
-    setSubagentNotification(null)
-    setAskState(null)
-    setAgents([])
+    tracker.clear()
+    notified.clear()
+    setTaskNotification(null)
+    setTasks([])
   }
 
   return {
-    askState,
-    agents,
-    subagentNotification,
-    dismissSubagentNotification: () => setSubagentNotification(null),
+    tasks,
+    taskNotification,
+    dismissTaskNotification: () => setTaskNotification(null),
     dispatchEvent,
     clearFinished,
-    clearAsk,
     clearAll,
   }
 }

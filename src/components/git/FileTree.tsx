@@ -288,7 +288,7 @@ export function FileTree(props: FileTreeProps) {
     const original = path.split('/').pop() ?? ''
     if (!draft || draft === original) return
     try {
-          const newPath = await window.openpi.renameFile(path, draft, props.cwd ?? undefined)
+      const newPath = await window.openpi.renameFile(path, draft, props.cwd ?? undefined)
       props.onFileRenamed?.(path, newPath)
       void refreshTree(false)
     } catch (error) {
@@ -437,7 +437,7 @@ export function FileTree(props: FileTreeProps) {
 
   const deleteNode = async (node: FileTreeNode) => {
     try {
-          const result = await window.openpi.deleteFile(node.path, props.cwd ?? undefined)
+      const result = await window.openpi.deleteFile(node.path, props.cwd ?? undefined)
       if (!result.trashed) return
       props.onFileDeleted?.(node.path, node.isDir)
       void refreshTree(false)
@@ -448,7 +448,7 @@ export function FileTree(props: FileTreeProps) {
 
   const copyNode = async (node: FileTreeNode) => {
     try {
-          await window.openpi.copyFile(node.path, undefined, props.cwd ?? undefined)
+      await window.openpi.copyFile(node.path, undefined, props.cwd ?? undefined)
       void refreshTree(false)
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Could not copy')

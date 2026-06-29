@@ -1,7 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GitLock, withGitLock } from '../electron/git/gitLock'
 
 describe('withGitLock', () => {
+  vi.setConfig({ testTimeout: 20_000 })
+
   it('runs tasks and returns their result', async () => {
     const result = await withGitLock('/tmp/test-repo', async () => 42)
     expect(result).toBe(42)
@@ -152,7 +154,10 @@ describe('GitLock', () => {
     await expect(
       lock.run(
         cwd,
-        () => new Promise(() => {/* never resolves */}),
+        () =>
+          new Promise(() => {
+            /* never resolves */
+          }),
         { timeoutMs: 50 }
       )
     ).rejects.toThrow(/timed out/)

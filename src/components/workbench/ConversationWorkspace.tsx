@@ -9,7 +9,6 @@ import type { DisplayPreferences } from '../../lib/displayPreferences'
 import type { FileLineComment, NewFileLineComment } from '../../lib/fileLineComments'
 import type { GitChangedFile, GitFileDiff, ModelInfo, SkillItem } from '../../lib/ipc'
 import { isDiffPreviewTab } from '../../lib/previewTabs'
-import { AskWidget } from '../AskWidget'
 import { Composer } from '../Composer'
 import { ConversationPane } from '../conversation/ConversationPane'
 import { FilePreviewPane } from '../FilePreviewPane'
@@ -208,21 +207,12 @@ export function ConversationWorkspace(props: ConversationWorkspaceProps) {
           />
 
           <div class="widget-tray">
-            <SubagentWidget agents={props.session.agents} />
+            <SubagentWidget tasks={props.session.tasks} />
             <SubagentFileWidget
               artifacts={props.session.artifacts}
               onDismiss={() => props.session.clearArtifacts()}
             />
             <TodoListTray todoFiles={props.session.todoFiles} />
-            <Show when={props.session.askState}>
-              {(state) => (
-                <AskWidget
-                  state={state()}
-                  onAnswer={(formatted) => void props.session.submitAsk(formatted)}
-                  onDismiss={() => props.session.dismissAsk()}
-                />
-              )}
-            </Show>
           </div>
 
           <Show when={props.showRemoteSessionBar}>
@@ -253,7 +243,7 @@ export function ConversationWorkspace(props: ConversationWorkspaceProps) {
             )}
           </Show>
 
-          <Show when={props.session.subagentNotification}>
+          <Show when={props.session.taskNotification}>
             {(notif) => (
               <div
                 classList={{
@@ -266,13 +256,13 @@ export function ConversationWorkspace(props: ConversationWorkspaceProps) {
                   <span class="subagent-notification-icon">
                     {notif().status === 'completed' ? '✓' : '✗'}
                   </span>
-                  {notif().status === 'completed' ? 'Subagent complete' : 'Subagent failed'}:{' '}
+                  {notif().status === 'completed' ? 'Task complete' : 'Task failed'}:{' '}
                   {notif().description}
                 </span>
                 <button
                   type="button"
                   class="subagent-notification-dismiss"
-                  onClick={() => props.session.dismissSubagentNotification()}
+                  onClick={() => props.session.dismissTaskNotification()}
                 >
                   ×
                 </button>

@@ -57,21 +57,21 @@ function countContentLines(contents: string): number {
     : contents.split(/\r?\n/).length
 }
 
-    async function readDiffContents(
-      cwd: string,
-      git: ReturnType<typeof simpleGit>,
-      filePath: string,
-      source: 'working' | 'index' | 'branch',
-      baseRef?: string
-    ): Promise<Pick<GitFileDiff, 'oldContent' | 'newContent'>> {
-      const oldRef = source === 'branch' && baseRef ? `${baseRef}:${filePath}` : `HEAD:${filePath}`
-      const oldContent = (await readGitText(git, oldRef)) ?? ''
-      const newContent =
-        source === 'index'
-          ? ((await readGitText(git, `:${filePath}`)) ?? '')
-          : (readWorkingText(cwd, filePath) ?? '')
-      return { oldContent, newContent }
-    }
+async function readDiffContents(
+  cwd: string,
+  git: ReturnType<typeof simpleGit>,
+  filePath: string,
+  source: 'working' | 'index' | 'branch',
+  baseRef?: string
+): Promise<Pick<GitFileDiff, 'oldContent' | 'newContent'>> {
+  const oldRef = source === 'branch' && baseRef ? `${baseRef}:${filePath}` : `HEAD:${filePath}`
+  const oldContent = (await readGitText(git, oldRef)) ?? ''
+  const newContent =
+    source === 'index'
+      ? ((await readGitText(git, `:${filePath}`)) ?? '')
+      : (readWorkingText(cwd, filePath) ?? '')
+  return { oldContent, newContent }
+}
 
 function resolveGitDir(cwd: string, gitDir: string): string {
   if (gitDir.startsWith('/')) return gitDir
@@ -223,167 +223,165 @@ function countDiffLines(raw: string): { added: number; removed: number } {
   return { added, removed }
 }
 
-    export async function getGitFileDiff(
-      cwd: string,
-      filePath: string,
-      options: { scope?: 'unstaged' | 'staged' | 'branch' | 'auto'; baseBranch?: string } = {}
-    ): Promise<GitFileDiff> {
-      return withGitLock(cwd, async () => {
-        const git = simpleGit({ baseDir: cwd })
-        const scope = options.scope ?? 'auto'
-        try {
-          // ─── Branch scope: working tree vs base branch ──────────────────────
-          if (scope === 'branch') {
-            const base = options.baseBranch ?? 'main'
-            const raw = await git.raw([
-              'diff', `${base}...HEAD`, '--unified=3', '--', filePath,
-            ])
-            if (!raw.trim()) {
-              return {
-                path: filePath,
-                rawPatch: '',
-                totalAdded: 0,
-                totalRemoved: 0,
-                isNew: false,
-                isDeleted: false,
-              }
-            }
-            const { added, removed } = countDiffLines(raw)
-            const contents = await readDiffContents(cwd, git, filePath, 'branch', base)
-            return {
-              path: filePath,
-              rawPatch: raw,
-              ...contents,
-              totalAdded: added,
-              totalRemoved: removed,
-              isNew: added > 0 && removed === 0,
-              isDeleted: removed > 0 && added === 0,
-            }
-          }
-
-          // ─── Staged scope: index vs HEAD ─────────────────────────────────────
-          if (scope === 'staged') {
-            const raw = await git.raw(['diff', '--staged', '--unified=3', '--', filePath])
-            if (!raw.trim()) {
-              return {
-                path: filePath,
-                rawPatch: '',
-                totalAdded: 0,
-                totalRemoved: 0,
-                isNew: false,
-                isDeleted: false,
-              }
-            }
-            const { added, removed } = countDiffLines(raw)
-            return {
-              path: filePath,
-              rawPatch: raw,
-              ...(await readDiffContents(cwd, git, filePath, 'index')),
-              totalAdded: added,
-              totalRemoved: removed,
-              isNew: false,
-              isDeleted: removed > 0 && added === 0,
-            }
-          }
-
-          // ─── Unstaged scope: working tree vs index ───────────────────────────
-          if (scope === 'unstaged') {
-            const raw = await git.raw(['diff', '--unified=3', '--', filePath])
-            if (!raw.trim()) {
-              const status = await git.status().catch(() => null)
-              const isUntracked =
-                status?.files.some(
-                  (file) =>
-                    file.path === filePath && effectiveStatus(file.index, file.working_dir) === '?'
-                ) ?? false
-              const workingContent = readWorkingText(cwd, filePath)
-              if (isUntracked && workingContent !== null) {
-                return {
-                  path: filePath,
-                  rawPatch: '',
-                  oldContent: '',
-                  newContent: workingContent,
-                  totalAdded: countContentLines(workingContent),
-                  totalRemoved: 0,
-                  isNew: true,
-                  isDeleted: false,
-                }
-              }
-              return {
-                path: filePath,
-                rawPatch: '',
-                totalAdded: 0,
-                totalRemoved: 0,
-                isNew: false,
-                isDeleted: false,
-              }
-            }
-            const { added, removed } = countDiffLines(raw)
-            return {
-              path: filePath,
-              rawPatch: raw,
-              ...(await readDiffContents(cwd, git, filePath, 'working')),
-              totalAdded: added,
-              totalRemoved: removed,
-              isNew: added > 0 && removed === 0,
-              isDeleted: removed > 0 && added === 0,
-            }
-          }
-
-          // ─── Auto scope: fallback chain (unstaged → staged → untracked) ──────
-          const raw = await git.raw(['diff', '--unified=3', '--', filePath])
-          if (!raw.trim()) {
-            const stagedRaw = await git.raw(['diff', '--staged', '--unified=3', '--', filePath])
-            if (!stagedRaw.trim()) {
-              const status = await git.status().catch(() => null)
-              const isUntracked =
-                status?.files.some(
-                  (file) =>
-                    file.path === filePath && effectiveStatus(file.index, file.working_dir) === '?'
-                ) ?? false
-              const workingContent = readWorkingText(cwd, filePath)
-              if (isUntracked && workingContent !== null) {
-                return {
-                  path: filePath,
-                  rawPatch: '',
-                  oldContent: '',
-                  newContent: workingContent,
-                  totalAdded: countContentLines(workingContent),
-                  totalRemoved: 0,
-                  isNew: true,
-                  isDeleted: false,
-                }
-              }
-              return {
-                path: filePath,
-                rawPatch: '',
-                totalAdded: 0,
-                totalRemoved: 0,
-                isNew: false,
-                isDeleted: false,
-              }
-            }
-            const { added, removed } = countDiffLines(stagedRaw)
-            return {
-              path: filePath,
-              rawPatch: stagedRaw,
-              ...(await readDiffContents(cwd, git, filePath, 'index')),
-              totalAdded: added,
-              totalRemoved: removed,
-              isNew: false,
-              isDeleted: removed > 0 && added === 0,
-            }
-          }
-          const { added, removed } = countDiffLines(raw)
+export async function getGitFileDiff(
+  cwd: string,
+  filePath: string,
+  options: { scope?: 'unstaged' | 'staged' | 'branch' | 'auto'; baseBranch?: string } = {}
+): Promise<GitFileDiff> {
+  return withGitLock(cwd, async () => {
+    const git = simpleGit({ baseDir: cwd })
+    const scope = options.scope ?? 'auto'
+    try {
+      // ─── Branch scope: working tree vs base branch ──────────────────────
+      if (scope === 'branch') {
+        const base = options.baseBranch ?? 'main'
+        const raw = await git.raw(['diff', `${base}...HEAD`, '--unified=3', '--', filePath])
+        if (!raw.trim()) {
           return {
             path: filePath,
-            rawPatch: raw,
-            ...(await readDiffContents(cwd, git, filePath, 'working')),
-            totalAdded: added,
-            totalRemoved: removed,
-            isNew: added > 0 && removed === 0,
-            isDeleted: removed > 0 && added === 0,
+            rawPatch: '',
+            totalAdded: 0,
+            totalRemoved: 0,
+            isNew: false,
+            isDeleted: false,
           }
+        }
+        const { added, removed } = countDiffLines(raw)
+        const contents = await readDiffContents(cwd, git, filePath, 'branch', base)
+        return {
+          path: filePath,
+          rawPatch: raw,
+          ...contents,
+          totalAdded: added,
+          totalRemoved: removed,
+          isNew: added > 0 && removed === 0,
+          isDeleted: removed > 0 && added === 0,
+        }
+      }
+
+      // ─── Staged scope: index vs HEAD ─────────────────────────────────────
+      if (scope === 'staged') {
+        const raw = await git.raw(['diff', '--staged', '--unified=3', '--', filePath])
+        if (!raw.trim()) {
+          return {
+            path: filePath,
+            rawPatch: '',
+            totalAdded: 0,
+            totalRemoved: 0,
+            isNew: false,
+            isDeleted: false,
+          }
+        }
+        const { added, removed } = countDiffLines(raw)
+        return {
+          path: filePath,
+          rawPatch: raw,
+          ...(await readDiffContents(cwd, git, filePath, 'index')),
+          totalAdded: added,
+          totalRemoved: removed,
+          isNew: false,
+          isDeleted: removed > 0 && added === 0,
+        }
+      }
+
+      // ─── Unstaged scope: working tree vs index ───────────────────────────
+      if (scope === 'unstaged') {
+        const raw = await git.raw(['diff', '--unified=3', '--', filePath])
+        if (!raw.trim()) {
+          const status = await git.status().catch(() => null)
+          const isUntracked =
+            status?.files.some(
+              (file) =>
+                file.path === filePath && effectiveStatus(file.index, file.working_dir) === '?'
+            ) ?? false
+          const workingContent = readWorkingText(cwd, filePath)
+          if (isUntracked && workingContent !== null) {
+            return {
+              path: filePath,
+              rawPatch: '',
+              oldContent: '',
+              newContent: workingContent,
+              totalAdded: countContentLines(workingContent),
+              totalRemoved: 0,
+              isNew: true,
+              isDeleted: false,
+            }
+          }
+          return {
+            path: filePath,
+            rawPatch: '',
+            totalAdded: 0,
+            totalRemoved: 0,
+            isNew: false,
+            isDeleted: false,
+          }
+        }
+        const { added, removed } = countDiffLines(raw)
+        return {
+          path: filePath,
+          rawPatch: raw,
+          ...(await readDiffContents(cwd, git, filePath, 'working')),
+          totalAdded: added,
+          totalRemoved: removed,
+          isNew: added > 0 && removed === 0,
+          isDeleted: removed > 0 && added === 0,
+        }
+      }
+
+      // ─── Auto scope: fallback chain (unstaged → staged → untracked) ──────
+      const raw = await git.raw(['diff', '--unified=3', '--', filePath])
+      if (!raw.trim()) {
+        const stagedRaw = await git.raw(['diff', '--staged', '--unified=3', '--', filePath])
+        if (!stagedRaw.trim()) {
+          const status = await git.status().catch(() => null)
+          const isUntracked =
+            status?.files.some(
+              (file) =>
+                file.path === filePath && effectiveStatus(file.index, file.working_dir) === '?'
+            ) ?? false
+          const workingContent = readWorkingText(cwd, filePath)
+          if (isUntracked && workingContent !== null) {
+            return {
+              path: filePath,
+              rawPatch: '',
+              oldContent: '',
+              newContent: workingContent,
+              totalAdded: countContentLines(workingContent),
+              totalRemoved: 0,
+              isNew: true,
+              isDeleted: false,
+            }
+          }
+          return {
+            path: filePath,
+            rawPatch: '',
+            totalAdded: 0,
+            totalRemoved: 0,
+            isNew: false,
+            isDeleted: false,
+          }
+        }
+        const { added, removed } = countDiffLines(stagedRaw)
+        return {
+          path: filePath,
+          rawPatch: stagedRaw,
+          ...(await readDiffContents(cwd, git, filePath, 'index')),
+          totalAdded: added,
+          totalRemoved: removed,
+          isNew: false,
+          isDeleted: removed > 0 && added === 0,
+        }
+      }
+      const { added, removed } = countDiffLines(raw)
+      return {
+        path: filePath,
+        rawPatch: raw,
+        ...(await readDiffContents(cwd, git, filePath, 'working')),
+        totalAdded: added,
+        totalRemoved: removed,
+        isNew: added > 0 && removed === 0,
+        isDeleted: removed > 0 && added === 0,
+      }
     } catch {
       return {
         path: filePath,
@@ -476,36 +474,42 @@ export async function getGitStagedDiff(cwd: string): Promise<Record<string, GitF
  * Get diff between the current branch and a base branch.
  * Returns a record keyed by file path, or null on error.
  */
-      export async function getGitBranchDiff(
-        cwd: string,
-        baseBranch?: string
-      ): Promise<Record<string, GitFileDiff> | null> {
-        return withGitLock(cwd, async () => {
-          const effectiveBase = baseBranch ?? 'main'
-        const git = simpleGit({ baseDir: cwd })
-        try {
-          const summary = await git.diffSummary([`${effectiveBase}...HEAD`])
-          if (!summary.files.length) return null
+export async function getGitBranchDiff(
+  cwd: string,
+  baseBranch?: string
+): Promise<Record<string, GitFileDiff> | null> {
+  return withGitLock(cwd, async () => {
+    const effectiveBase = baseBranch ?? 'main'
+    const git = simpleGit({ baseDir: cwd })
+    try {
+      const summary = await git.diffSummary([`${effectiveBase}...HEAD`])
+      if (!summary.files.length) return null
 
-          const result: Record<string, GitFileDiff> = {}
-          for (const f of summary.files) {
-            const filePath = f.file
-            const raw = await git.raw(['diff', `${effectiveBase}...HEAD`, '--unified=3', '--', filePath])
-            const { added, removed } = countDiffLines(raw)
-            result[filePath] = {
-              path: filePath,
-              rawPatch: raw,
-              totalAdded: added,
-              totalRemoved: removed,
-              isNew: added > 0 && removed === 0,
-              isDeleted: removed > 0 && added === 0,
-            }
-          }
-          return result
-        } catch {
-          return null
+      const result: Record<string, GitFileDiff> = {}
+      for (const f of summary.files) {
+        const filePath = f.file
+        const raw = await git.raw([
+          'diff',
+          `${effectiveBase}...HEAD`,
+          '--unified=3',
+          '--',
+          filePath,
+        ])
+        const { added, removed } = countDiffLines(raw)
+        result[filePath] = {
+          path: filePath,
+          rawPatch: raw,
+          totalAdded: added,
+          totalRemoved: removed,
+          isNew: added > 0 && removed === 0,
+          isDeleted: removed > 0 && added === 0,
         }
-      })
+      }
+      return result
+    } catch {
+      return null
+    }
+  })
 }
 
 /**

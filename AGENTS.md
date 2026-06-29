@@ -16,7 +16,7 @@ OpenPi is a **local-first desktop workbench** for [Pi](https://pi.dev) (`@earend
 
 **For agents implementing features:** Pi is intentionally **minimal** (small prompt, four core tools, **YOLO by default**). Pi ships **without** built-in plan mode, todos, MCP, permission gates, or sub-agents — those belong in **user extensions** or documented Pi [examples](https://github.com/earendil-works/pi/tree/main/packages/coding-agent/examples/extensions). OpenPi adds **inspectability** (UI, tokens, Git/diff) and **optional desktop policy** (protected paths, high-risk confirms in main). Treat the **human as the quality gate** — prefer review surfaces and Phase 7 P0 work (diff review before apply, test evidence) over velocity features (auto-commit stacks, agent armies, new builtins). **Do not** propose Kun runtimes, SDD wizards, senpi-style permission/todo forks in main, or influencer “extension stack” installers unless the user explicitly asks.
 
-**OpenPi-specific layer (already shipped — extend carefully):** sidecar `customTools` subagents (`Agent`, `get_subagent_result`, `steer_subagent`), goal/harness UI, main-process policy. New agent semantics should default to **Pi extensions**, not more host builtins.
+**Delegation:** use the **`@heyhuynhgiabuu/pi-task`** Pi package (`task` tool, `.pi/artifacts/TASKS.md`). OpenPi does not register built-in `Agent` customTools. Main-process policy remains OpenPi-owned.
 
 Target UX: sessions sidebar (workspace-grouped, token/cost) + conversation (steer/follow-up/abort, tool cards) + customizations modal + Git panel + split diff + terminal + command palette (`⇧⌘P`). Details: `ROADMAP.md` north star.
 
@@ -270,52 +270,17 @@ Mandatory defaults — not optional:
 
 ---
 
-## OpenPi Subagent System
+## Pi-task delegation UI
 
-Built-in subagents are **`customTools` on the sidecar** (not Pi core). Prefer **extensions** for new delegated workflows unless the user wants first-class OpenPi UI for a fixed tool shape.
-
-### Architecture
+Install **`npm:@heyhuynhgiabuu/pi-task`** in Pi settings/packages. OpenPi surfaces:
 
 | Layer | File(s) | Role |
 |---|---|---|
-| **Sidecar host** | `electron/pi/sidecar.ts` | Electron `utilityProcess` running the Pi SDK; owns `createAgentSession`, `DefaultResourceLoader`, `SettingsManager`, `SessionManager`, `AuthStorage`, `ModelRegistry` |
-| **Subagent core** | `electron/subagent/class.ts`, `electron/subagent/schemas.ts`, `electron/subagent/types.ts` | Custom tool definitions (worker, explorer, scout, planner, reviewer) injected via the sidecar's `customTools` option |
-| **Main bridge** | `electron/services/piSidecar.ts` | Wraps subagent invocation, builds the system prompt fragment, forwards user input |
-| **Renderer shell** | `src/components/SubagentWidget.tsx`, `src/components/conversation/ToolCardView.tsx` | Renders the subagent and tool cards in the conversation timeline |
-| **State bridge** | `src/lib/syncBridge.ts` | Bridges session state from the electron main to the renderer |
+| **Artifacts** | `electron/services/piTaskArtifacts.ts`, `electron/services/artifactWatcher.ts` | Parse `.pi/artifacts/TASKS.md` + `task-sessions.json`; emit `ARTIFACT_UPDATE` |
+| **Live tool rows** | `src/lib/extensionTrackers.ts` (`TaskTracker`), `SubagentWidget.tsx` | Track in-flight `task` tool calls from session events |
+| **Tray** | `SubagentFileWidget.tsx`, `useSubagentFileTracker.ts` | Show running tasks from `TASKS.md` |
 
-### Built-in agent types
-
-| Type | Surface | Notes |
-|---|---|---|
-| `worker` | LLM tool | Default general-purpose subagent |
-| `explorer` | LLM tool | Read-only investigation, no writes |
-| `scout` | LLM tool | Cheap, fast reconnaissance |
-| `planner` | LLM tool | Decomposes objectives into plans, no execution |
-| `reviewer` | LLM tool | Code review and quality assessment |
-
-### Custom agents
-
-Discovery: `.pi/agents/*.md` (project) and `~/.pi/agent/agents/*.md` (global), with YAML frontmatter (`name`, `tools`, `model`, etc.). Example layout under `~/.pi/agent/agents/<name>/` may also use an `AGENTS.md` body:
-
-```yaml
----
-name: my-agent
-description: One-line purpose
-model: anthropic/claude-sonnet-4-6
-thinking: medium
-tools: [read, grep, find]
----
-```
-
-The frontmatter is parsed by `DefaultResourceLoader` and registered as a subagent tool. The body becomes the system prompt fragment.
-
-### Subagent-specific don'ts
-
-- Do not import `@earendil-works/pi-coding-agent` in the renderer to use subagent APIs.
-- Do not reuse a `customTools` array across sessions; rebuild per `createAgentSession` call.
-- Do not let the model decide which subagent to invoke without an explicit user trigger; the surface is opt-in.
-- Do not wire subagent prompts that bypass the sidecar; all subagent invocation goes through `electron/pi/sidecar.ts` so Electron main owns lifecycle.
+Agent definitions for `task` come from pi-task bundled agents plus `.pi/agents/*.md` / `~/.pi/agent/agents/*.md` (pi-task precedence rules).
 
 
 ---

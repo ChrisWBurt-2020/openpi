@@ -402,6 +402,8 @@ export type RemoteSessionUpdate = z.infer<typeof remoteSessionUpdateSchema>
 export const subagentArtifactStatusSchema = z.enum(['running', 'completed', 'failed'])
 export const subagentArtifactSchema = z.object({
   id: z.string(),
+  taskId: z.string().optional(),
+  conversationId: z.string().optional(),
   agent: z.string(),
   prompt: z.string(),
   context: z.string(),
@@ -807,12 +809,12 @@ export const gitFileDiffSchema = z.object({
 })
 export type GitFileDiff = z.infer<typeof gitFileDiffSchema>
 
-    export const gitDiffRequestSchema = z.object({
-      path: z.string(),
-      cwd: z.string().optional(),
-      scope: z.enum(['unstaged', 'staged', 'branch', 'auto']).optional(),
-      baseBranch: z.string().optional(),
-    })
+export const gitDiffRequestSchema = z.object({
+  path: z.string(),
+  cwd: z.string().optional(),
+  scope: z.enum(['unstaged', 'staged', 'branch', 'auto']).optional(),
+  baseBranch: z.string().optional(),
+})
 export type GitDiffRequest = z.infer<typeof gitDiffRequestSchema>
 
 export const gitStageSchema = z.object({ path: z.string() })
@@ -1090,44 +1092,44 @@ export const readFileRequestSchema = z.object({
 })
 export type ReadFileRequest = z.infer<typeof readFileRequestSchema>
 
-    export const writeFileRequestSchema = z.object({
-      /** Path relative to workspace cwd — validated against cwd in Electron main */
-      path: z.string().min(1),
-      content: z.string(),
-      /** Optional workspace cwd override; falls back to threadCwdRegistry when omitted */
-      cwd: z.string().optional(),
-    })
-    export type WriteFileRequest = z.infer<typeof writeFileRequestSchema>
+export const writeFileRequestSchema = z.object({
+  /** Path relative to workspace cwd — validated against cwd in Electron main */
+  path: z.string().min(1),
+  content: z.string(),
+  /** Optional workspace cwd override; falls back to threadCwdRegistry when omitted */
+  cwd: z.string().optional(),
+})
+export type WriteFileRequest = z.infer<typeof writeFileRequestSchema>
 
-    export const deleteFileRequestSchema = z.object({
-      /** Path relative to workspace cwd — validated against cwd in Electron main */
-      path: z.string().min(1),
-      /** Optional workspace cwd override; falls back to threadCwdRegistry when omitted */
-      cwd: z.string().optional(),
-    })
-    export type DeleteFileRequest = z.infer<typeof deleteFileRequestSchema>
+export const deleteFileRequestSchema = z.object({
+  /** Path relative to workspace cwd — validated against cwd in Electron main */
+  path: z.string().min(1),
+  /** Optional workspace cwd override; falls back to threadCwdRegistry when omitted */
+  cwd: z.string().optional(),
+})
+export type DeleteFileRequest = z.infer<typeof deleteFileRequestSchema>
 
-    export const renameFileRequestSchema = z.object({
-      /** Path relative to workspace cwd */
-      path: z.string().min(1),
-      newName: z.string().min(1).max(255),
-      /** Optional workspace cwd override; falls back to threadCwdRegistry when omitted */
-      cwd: z.string().optional(),
-    })
-    export type RenameFileRequest = z.infer<typeof renameFileRequestSchema>
+export const renameFileRequestSchema = z.object({
+  /** Path relative to workspace cwd */
+  path: z.string().min(1),
+  newName: z.string().min(1).max(255),
+  /** Optional workspace cwd override; falls back to threadCwdRegistry when omitted */
+  cwd: z.string().optional(),
+})
+export type RenameFileRequest = z.infer<typeof renameFileRequestSchema>
 
-    export const copyFileRequestSchema = z.object({
-      /** Source path relative to workspace cwd */
-      path: z.string().min(1),
-      /**
-       * Target path relative to workspace cwd. If absent, the file is
-       * copied to its sibling with a "-copy" suffix.
-       */
-      target: z.string().min(1).optional(),
-      /** Optional workspace cwd override; falls back to threadCwdRegistry when omitted */
-      cwd: z.string().optional(),
-    })
-    export type CopyFileRequest = z.infer<typeof copyFileRequestSchema>
+export const copyFileRequestSchema = z.object({
+  /** Source path relative to workspace cwd */
+  path: z.string().min(1),
+  /**
+   * Target path relative to workspace cwd. If absent, the file is
+   * copied to its sibling with a "-copy" suffix.
+   */
+  target: z.string().min(1).optional(),
+  /** Optional workspace cwd override; falls back to threadCwdRegistry when omitted */
+  cwd: z.string().optional(),
+})
+export type CopyFileRequest = z.infer<typeof copyFileRequestSchema>
 
 export const deleteFileResultSchema = z.object({
   trashed: z.boolean(),
@@ -1145,13 +1147,13 @@ export type FileContent = z.infer<typeof fileContentSchema>
 
 // ─── Format file (Biome) ───────────────────────────────────────────────────────
 
-    export const formatFileRequestSchema = z.object({
-      /** Path relative to workspace cwd */
-      path: z.string().min(1),
-      /** Optional workspace cwd override; falls back to threadCwdRegistry when omitted */
-      cwd: z.string().optional(),
-    })
-    export type FormatFileRequest = z.infer<typeof formatFileRequestSchema>
+export const formatFileRequestSchema = z.object({
+  /** Path relative to workspace cwd */
+  path: z.string().min(1),
+  /** Optional workspace cwd override; falls back to threadCwdRegistry when omitted */
+  cwd: z.string().optional(),
+})
+export type FormatFileRequest = z.infer<typeof formatFileRequestSchema>
 
 // ─── Theme colors (for swatch rendering) ──────────────────────────────────────
 
