@@ -88,7 +88,16 @@ export function ReviewFileCard(props: ReviewFileCardProps) {
   })
   const controller = useReviewLineComments({
     filePath: props.item.path,
-    fileContent: () => (props.isCommentActive ? props.fileContentFor(props.item.path) : null),
+    fileContent: () => {
+          if (props.isCommentActive) {
+            const fromFile = props.fileContentFor(props.item.path)
+            if (fromFile) return fromFile
+          }
+          // Fallback: use the diff content already loaded for the review view.
+          // The diff view always has the full new/old content for line extraction.
+          const diff = loadedGitDiff()
+          return diff?.newContent ?? diff?.oldContent ?? null
+        },
     comments: () => props.comments,
     onAdd: props.onAddComment,
     onRemove: props.onRemoveComment,
@@ -98,7 +107,12 @@ export function ReviewFileCard(props: ReviewFileCardProps) {
     onInstance: setDiffInstance,
     onLineSelected: (range) => {
       props.onActivateComments()
-      if (range) void props.ensureFileContent(props.item.path)
+      if (range) {
+        void props.ensureFileContent(props.item.path).then(() => {
+          controller.handleLineSelected(range)
+        })
+        return
+      }
       controller.handleLineSelected(range)
     },
     onLineSelectionEnd: (range) => {
@@ -108,19 +122,21 @@ export function ReviewFileCard(props: ReviewFileCardProps) {
     onLineNumberClick: (range) => {
       props.onActivateComments()
       if (range) {
-        void props.ensureFileContent(props.item.path)
-        controller.handleLineSelected(range)
+        void props.ensureFileContent(props.item.path).then(() => {
+          controller.handleLineSelected(range)
+        })
       }
     },
     onHoverCommentSelect: (range) => {
       props.onActivateComments()
-      void props.ensureFileContent(props.item.path)
-      const current = controller.draft()
-      if (current && rangeContainsLine(current.range, range)) {
-        controller.handleLineSelected(current.range)
-        return
-      }
-      controller.handleLineSelected(range)
+      void props.ensureFileContent(props.item.path).then(() => {
+        const current = controller.draft()
+        if (current && rangeContainsLine(current.range, range)) {
+          controller.handleLineSelected(current.range)
+          return
+        }
+        controller.handleLineSelected(range)
+      })
     },
   }
 
