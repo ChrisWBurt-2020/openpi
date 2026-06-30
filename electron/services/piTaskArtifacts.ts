@@ -1,114 +1,129 @@
 /**
- * Parse `@heyhuynhgiabuu/pi-task` artifacts under `.pi/artifacts/`.
+ * Helpers for `@heyhuynhgiabuu/pi-task` JSON state under `.pi/`.
  *
- * Canonical layout (flat, no per-task dirs):
- *   TASKS.md              — `### <task-id>` blocks with `status:` frontmatter
- *   task-sessions.json    — conversation_id → { task_id, session_file }
+ * Canonical layout:
+ *   .pi/artifacts/task-sessions.json          — conversation_id → { task_id }
+ *   .pi/artifacts/sessions/<taskId>/*.jsonl  — sub-session created by a task
+ *   .pi/task-session-history.json            — task status/session metadata
  */
 import fs from 'node:fs'
 import path from 'node:path'
+import { findTaskIdForToolCall, MAX_TIME_DELTA_MS, type TaskHistoryEntry } from '../../src/lib/taskHistory'
+import { normalizeTaskHistoryStatus } from './piTaskStatus'
 
-export const TASKS_FILE = 'TASKS.md'
+export { findTaskIdForToolCall, MAX_TIME_DELTA_MS }
+export type { TaskHistoryEntry }
 
-export interface PiTaskBlock {
-  taskId: string
-  status: 'active' | 'done' | 'abandoned' | null
-  body: string
-  updatedAtMs: number
+export const PI_TASK_SHORT_ID = /^[A-Za-z0-9._-]{1,80}$/
+
+export function getSubSessionDir(artifactsDir: string, taskId: string): string {
+  return path.join(artifactsDir, 'sessions', taskId)
 }
 
-export interface PiTaskMetadata {
-  conversation_id?: string
-  task_id?: string
-  agent_type?: string
-  session_file?: string
-  last_prompt?: string
-  last_used_at?: string
-  created_at?: string
-}
+export function resolveSubSessionPath(artifactsDir: string, taskId: string): string | null {
+  if (!PI_TASK_SHORT_ID.test(taskId)) return null
+  const historyPath = resolveHistorySessionRef(artifactsDir, taskId)
+  if (historyPath !== null) return historyPath
 
-export function getTasksFilePath(artifactsDir: string): string {
-  return path.join(artifactsDir, TASKS_FILE)
-}
-
-export function parseTaskBlocks(content: string): Map<string, PiTaskBlock> {
-  const blocks = new Map<string, PiTaskBlock>()
-  const lines = content.split('\n')
-  let currentTaskId: string | null = null
-  let currentStatus: PiTaskBlock['status'] = null
-  let currentUpdatedMs = 0
-  let currentBody: string[] = []
-
-  const flush = () => {
-    if (currentTaskId === null) return
-    blocks.set(currentTaskId, {
-      taskId: currentTaskId,
-      status: currentStatus,
-      body: currentBody.join('\n'),
-      updatedAtMs: currentUpdatedMs,
-    })
-    currentTaskId = null
-    currentStatus = null
-    currentUpdatedMs = 0
-    currentBody = []
+  const dir = getSubSessionDir(artifactsDir, taskId)
+  let entries: string[]
+  try {
+    entries = fs.readdirSync(dir)
+  } catch {
+    return null
   }
+  const file = entries.find((name) => name.endsWith('.jsonl'))
+  return file ? path.join(dir, file) : null
+}
 
-  for (const line of lines) {
-    const heading = line.match(/^###\s+(\S+)\s*$/)
-    if (heading) {
-      flush()
-      currentTaskId = heading[1]
+function resolveHistorySessionRef(artifactsDir: string, taskId: string): string | null {
+  const file = path.join(path.dirname(artifactsDir), 'task-session-history.json')
+  let raw: string
+  try {
+    raw = fs.readFileSync(file, 'utf8')
+  } catch {
+    return null
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (!Array.isArray(parsed)) return null
+  const match = parsed.find((entry): entry is TaskHistoryEntry => {
+    if (entry === null || typeof entry !== 'object') return false
+    return 'id' in entry && entry.id === taskId
+  })
+  const sessionRef = match?.sessionRef
+  if (typeof sessionRef !== 'string' || sessionRef.length === 0) return null
+  const candidate = path.isAbsolute(sessionRef) ? sessionRef : path.join(artifactsDir, sessionRef)
+  try {
+    const stat = fs.statSync(candidate)
+    return stat.isFile() ? candidate : null
+  } catch {
+    return null
+  }
+}
+
+export function resolveMostRecentSubSessionPath(artifactsDir: string): string | null {
+  const root = path.join(artifactsDir, 'sessions')
+  let taskDirs: string[]
+  try {
+    taskDirs = fs.readdirSync(root)
+  } catch {
+    return null
+  }
+  let best: { file: string; mtimeMs: number } | null = null
+  for (const taskId of taskDirs) {
+    if (!PI_TASK_SHORT_ID.test(taskId)) continue
+    const dir = path.join(root, taskId)
+    let files: string[]
+    try {
+      files = fs.readdirSync(dir)
+    } catch {
       continue
     }
-    if (currentTaskId === null) continue
-
-    const statusLine = line.match(/^status:\s*([^|\s]+)/)
-    if (statusLine) {
-      const raw = statusLine[1].trim().toLowerCase()
-      if (raw === 'active' || raw === 'done' || raw === 'abandoned') {
-        currentStatus = raw
+    for (const name of files) {
+      if (!name.endsWith('.jsonl')) continue
+      const file = path.join(dir, name)
+      try {
+        const stat = fs.statSync(file)
+        if (best === null || stat.mtimeMs > best.mtimeMs) {
+          best = { file, mtimeMs: stat.mtimeMs }
+        }
+      } catch {
+        continue
       }
-      const updatedMatch = line.match(/updated:\s*(\S+)/)
-      if (updatedMatch) {
-        const parsed = Date.parse(updatedMatch[1])
-        if (Number.isFinite(parsed)) currentUpdatedMs = parsed
-      }
-      continue
     }
-    currentBody.push(line)
   }
-  flush()
-  return blocks
+  return best?.file ?? null
 }
 
-export function parseMetadataFromBody(body: string): PiTaskMetadata | undefined {
-  const match = body.match(/```json\n([\s\S]*?)\n```/)
-  if (!match) return undefined
+export function readTaskSessionHistory(cwd: string): TaskHistoryEntry[] {
+  const file = path.join(cwd, '.pi', 'task-session-history.json')
+  let raw: string
   try {
-    return JSON.parse(match[1]) as PiTaskMetadata
+    raw = fs.readFileSync(file, 'utf8')
   } catch {
-    return undefined
+    return []
   }
-}
-
-export function extractResultSection(body: string): string | null {
-  const idx = body.indexOf('#### Result')
-  if (idx === -1) return null
-  const after = body.slice(idx + '#### Result'.length).trim()
-  return after.length > 0 ? after : null
-}
-
-export function readTasksFile(artifactsDir: string): Map<string, PiTaskBlock> {
-  const filePath = getTasksFilePath(artifactsDir)
+  let parsed: unknown
   try {
-    const content = fs.readFileSync(filePath, 'utf-8')
-    const stat = fs.statSync(filePath)
-    const blocks = parseTaskBlocks(content)
-    for (const block of blocks.values()) {
-      if (block.updatedAtMs === 0) block.updatedAtMs = stat.mtimeMs
+    parsed = JSON.parse(raw)
+  } catch {
+    return []
+  }
+  if (!Array.isArray(parsed)) return []
+  const out: TaskHistoryEntry[] = []
+  for (const entry of parsed) {
+    if (entry && typeof entry === 'object' && typeof (entry as TaskHistoryEntry).id === 'string') {
+      const historyEntry = entry as TaskHistoryEntry
+      out.push({
+        ...historyEntry,
+        status: normalizeTaskHistoryStatus(cwd, historyEntry.id, historyEntry.status, historyEntry.paneId),
+      })
     }
-    return blocks
-  } catch {
-    return new Map()
   }
+  return out
 }
