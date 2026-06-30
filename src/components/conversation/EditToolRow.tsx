@@ -5,6 +5,7 @@ import { FileIcon } from '../../lib/fileIcons'
 import { labelForTool } from '../../lib/sessionView'
 import type { ToolCard } from '../../types/session'
 import { extractEditPairs, extractFilePath, extractWriteLines } from './toolCardHelpers'
+import { SessionProgressDot } from './SessionProgressDot'
 
 type EditToolRowProps = {
   card: ToolCard
@@ -92,7 +93,7 @@ export const EditToolRow: Component<EditToolRowProps> = (props) => {
           </span>
         </Show>
         <Show when={props.card.streaming}>
-          <span class="tool-streaming-dot">·</span>
+          <SessionProgressDot status="running" />
         </Show>
         <Show when={!props.card.streaming}>
           <span class="tool-chevron" data-open={open()} aria-hidden="true">

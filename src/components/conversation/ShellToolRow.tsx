@@ -3,6 +3,7 @@ import type { DisplayPreferences } from '../../lib/displayPreferences'
 import { labelForTool } from '../../lib/sessionView'
 import type { ToolCard } from '../../types/session'
 import { extractCommand, MAX_CMD } from './toolCardHelpers'
+import { SessionProgressDot } from './SessionProgressDot'
 
 type ShellToolRowProps = {
   card: ToolCard
@@ -40,7 +41,7 @@ export const ShellToolRow: Component<ShellToolRowProps> = (props) => {
         <span class="tool-ran-label">{labelForTool(props.card.toolName)}</span>
         <code class="tool-ran-cmd">{displayCmd()}</code>
         <Show when={props.card.streaming}>
-          <span class="tool-streaming-dot">·</span>
+          <SessionProgressDot status="running" />
         </Show>
         <Show when={hasOutput() && !props.card.streaming}>
           <span class="tool-chevron" data-open={open()} aria-hidden="true">
