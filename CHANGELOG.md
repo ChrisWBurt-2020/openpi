@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-06-30
+
+- ### Added
+
+- **Homescreen delete button**: per-session trash icon in the session list. Confirms via in-app modal before moving the file to the OS trash. Keyboard shortcut: Delete or Backspace on a focused session row.
+- **Homescreen session deletion IPC**: new DELETE_SESSION channel with archive-then-trash semantics for active .jsonl files and direct trash for already-archived sessions. Path-traversal guard, OS-trash recovery.
+- **ConfirmDialog component**: small in-app alertdialog with backdrop blur, centered flex layout, danger button styled via --danger token. Reused for destructive actions across the app.
+
+### Changed
+
+- **Line comment format is stable**: always emits startLine/endLine, no more line="N" shortcut. LLM only has to handle one shape.
+- **File tree no longer intercepts Cmd/Ctrl+C**: that keybinding was overriding browser text-selection copy on the panel. Right-click context menu Copy still works.
+- **Tool-name shimmer rewritten**: the opacity-pulse heartbeat look is gone. Now a soft left-to-right text-shimmer sweep that matches the dot-grid pacing.
+
+### Fixed
+
+- **Homescreen text shimmer was invisible**: TopBar was reading session.isStreaming instead of conversationStreaming(), so the dot grid only rendered for the active local turn. Tool rows also had an inline style attribute that overrode the CSS class animation; removed.
+- **Conversation pane was stripping <file_comment> tags**: DOMPurify in MarkdownContent was dropping the custom tags, so the LLM still got the line number via Pi SDK but the human could not see it in the user message bubble. Added the tags + attrs to the allow-list.
+- **Workbench context showed virtual URLs as 'Viewing file'**: the filter checked visibleFileAbs (which is cwd + relPath) instead of the unmodified visibleFile, so openpi-diff://review always passed the local-path check. Filter now uses the unmodified input.
+- **Empty <selected_code> in review comments**: the file content IPC was returning null for review file paths. The review view already has the full new/old content loaded; added it as a fallback in the fileContent accessor. Also wrapped handleLineSelected in .then() after ensureFileContent to fix the race where the draft was set before the file content was loaded.
+- **Review FileCard no longer calls handleLineSelected before the file content is loaded**: was a race between the async IPC and the synchronous draft set. Now the call is chained via .then() in all three entry points (line select, line number click, hover comment select).
+
+
 ### Fixed
 
 - **Task guard was letting through model-hallucinated `task_id`s from old sessions.** The model (grok-composer-2.5-fast) recycles a `task_id` it saw earlier in the conversation — e.g. `mqzhz574-b765` after that task was already cancelled. The old guard only stripped UUIDs and format-invalid ids; well-formed but already-terminal ids passed through, and pi-task tried to "resume" the old task. The new guard reads `.pi/task-session-history.json` and strips any well-formed `task_id` whose id is in the history with status `done` / `cancelled` / `timeout` / `failed` (the "model is recycling a hallucinated id" case). Only an id that is `running` (i.e. a legitimate resume) or not in the history is allowed through. Added 7 new tests (`tests/openpiTaskGuard.test.ts`: 15 total) pinning the contract for the cancellation case, the legitimate-resume case, and the no-history fail-open case.
