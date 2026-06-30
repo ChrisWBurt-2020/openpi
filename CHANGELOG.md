@@ -2,14 +2,49 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Task guard was letting through model-hallucinated `task_id`s from old sessions.** The model (grok-composer-2.5-fast) recycles a `task_id` it saw earlier in the conversation — e.g. `mqzhz574-b765` after that task was already cancelled. The old guard only stripped UUIDs and format-invalid ids; well-formed but already-terminal ids passed through, and pi-task tried to "resume" the old task. The new guard reads `.pi/task-session-history.json` and strips any well-formed `task_id` whose id is in the history with status `done` / `cancelled` / `timeout` / `failed` (the "model is recycling a hallucinated id" case). Only an id that is `running` (i.e. a legitimate resume) or not in the history is allowed through. Added 7 new tests (`tests/openpiTaskGuard.test.ts`: 15 total) pinning the contract for the cancellation case, the legitimate-resume case, and the no-history fail-open case.
+
+- **Task rows were non-clickable for fresh task calls**: the model correctly omits `task_id` on fresh `task` calls (per the `task-tool` skill), so `TaskToolRow` was always reading an empty id from the tool args and disabling the trigger. Now `TaskToolRow` consults a layered resolver as the authoritative source for the pi-task short id, with the structured `details.task_id` as a fallback. The resolver checks:
+  1. `TaskTracker.tasks[]` keyed by `card.toolCallId` (populated from the result's `details.task_id` after the call ends).
+  2. `card.details.task_id` (the structured result field) — defensive backup for when pi-task does not emit `task_id` in the `tool_execution_end` event.
+  3. `.pi/task-session-history.json` — pi-task writes this at task start with `{id, agentType, description, startedAt}`. We match by `agentType` + `description` + closest `startedAt` (within a 5-minute window). This works for both running (history is written on start) and completed tasks. New IPC `openpi:read-task-session-history` and `findTaskIdForToolCall` helper.
+  Wired `resolveTaskIdForCard(card)` through the prop chain (`ConversationWorkspace` → `ConversationPane` → `Messages` → `ToolCardView` → `TaskToolRow`).
+
 ### Added
 
+- **Sub-session navigation from `task` tool rows**: clicking a `task` tool row in the parent session now navigates to the sub-session that pi-task created, replacing the inline expand-the-widget pattern with OpenCode's first-class session tree metaphor.
+  - `electron/services/piTaskArtifacts.ts` exports `resolveSubSessionPath(artifactsDir, taskId)` — returns the first `.jsonl` under `<artifactsDir>/sessions/<taskId>/`, or `null`.
+  - New IPC `openpi:resolve-sub-session-path` (handler in `electron/session/ipc.ts`, preload binding `window.openpi.session.resolveSubSessionPath`).
+  - `useOpenPiSession` gains `openSubSession(taskId)` and `popToParent()`, plus a `parentStack` signal and an `isSubSession` derived flag. Stack is cleared when the user opens a different session via the sidebar.
+  - New `src/lib/subSessionNavigation.ts` with `isSubSessionPath` for renderer-side path detection.
+  - `ConversationWorkspace` renders a breadcrumb with "Back to <parent name>" when the active session is a sub-session; the button is disabled (with a tooltip) when the parent stack is empty.
+  - `TaskToolRow` is now a navigation affordance: no expand body, a 5×5 animated dot grid for running tasks, a status pill (`running` / `completed` / `failed`), a compact result preview line, and a `→` chevron that translates on hover. Falls back to a non-interactive status line when the task has no resolvable sub-session.
+- `tests/piTaskSubSessionPath.test.ts` (8 cases): regex / path-traversal defense / missing dir / empty dir / multi-file disambiguation.
+- `tests/isSubSessionPath.test.ts` (4 cases): path-marker detection.
+- `tests/findTaskIdForToolCall.test.ts` (14 cases): readTaskSessionHistory happy / missing / malformed / non-string-id; findTaskIdForToolCall by agentType / by description / by both / closest time / outside time window / sparse entries.
+
+- Bundled `task-tool` skill (`.pi/skills/task-tool/SKILL.md`) teaching the model the correct `task` tool rules, to prevent `Unknown task_id` errors caused by passing UUIDs or `task_id` on fresh tasks.
+- `.pi/APPEND_SYSTEM.md` with strict, unmissable `task` tool rules appended to every Pi session's system prompt (researched from pi-task v0.2.0 source).
+- `tests/piTaskContract.test.ts` — contract tests locking OpenPi's alignment with pi-task v0.2.0 behavior (id format, error string, fresh vs resume, background default).
+
+### Added (previous)
+
 - Pi-task workbench: watches `.pi/artifacts/TASKS.md` from `@heyhuynhgiabuu/pi-task` and shows running tasks in the tray; live `task` tool progress in the session UI.
+
+### Fixed (this revision)
+
+- **OpenPi task-tool guard** (`.pi/extensions/openpi-task-guard.ts`): a Pi extension that hooks the `tool_call` event and **strips invalid `task_id` / `conversation_id`** before the `task` tool runs. Fixes the systematic model hallucination of UUIDs as `task_id` on fresh calls (e.g. `565c63f9-6aa2-4d40-a59b-18cccb0ab1a5`, `e2086af5-058e-47be-a2f5-1e4f7145e07f`, etc.). Contract tests in `tests/openpiTaskGuard.test.ts`.
 
 ### Changed
 
 - Delegation requires `pi install npm:@heyhuynhgiabuu/pi-task` for the `task` tool. OpenPi no longer registers built-in `Agent` / `get_subagent_result` / `steer_subagent` customTools on the sidecar.
 - Phase 7 beta evidence is `npm test` / Vitest, not `docs/TEST_MATRIX.md`.
+
+### Fixed
+
+- Emit `session_shutdown` before `session.reload()` so pi-task stops background polling that holds a captured `ExtensionAPI` — fixes stale extension ctx errors after resource reload.
 
 ### Removed
 
@@ -76,6 +111,9 @@
 - **Workbench chrome** — refined right-panel tabs, file tabs, preview toolbar/find bar borders, model toggles, homescreen icon, and main preview/diff backgrounds. (879377e, d599706, 01c753e, a484529)
 
 ### Fixed
+
+- Emit `session_shutdown` before `session.reload()` so pi-task (and other extensions) stop background timers that use a captured `ExtensionAPI` — fixes stale extension ctx errors after `/reload` or resource reload.
+
 
 - **File preview saves** — saving from CodeMirror now refreshes file-tree and Git-status observers so OpenPi surfaces update after edits. (21f3002)
 - **Markdown task lists** — TODO-style checklists (`- [ ]` / `- [x]`) now render as checkboxes in OpenPi markdown surfaces, including generated `TODO.md` files. (bf2624f)

@@ -18,6 +18,10 @@ OpenPi is a **local-first desktop workbench** for [Pi](https://pi.dev) (`@earend
 
 **Delegation:** use the **`@heyhuynhgiabuu/pi-task`** Pi package (`task` tool, `.pi/artifacts/TASKS.md`). OpenPi does not register built-in `Agent` customTools. Main-process policy remains OpenPi-owned.
 
+`task_id` must be a pi-task generated short ID (base36-timestamp-short) or a `conversation_id` you supplied. Full UUIDs (old `Agent` tool) are rejected by pi-task.
+
+**OpenPi also ships `.pi/extensions/openpi-task-guard.ts`** which hooks the Pi `tool_call` event and strips invalid `task_id` / `conversation_id` before the `task` tool runs. This protects against model hallucination of UUIDs as `task_id` on fresh calls.
+
 Target UX: sessions sidebar (workspace-grouped, token/cost) + conversation (steer/follow-up/abort, tool cards) + customizations modal + Git panel + split diff + terminal + command palette (`⇧⌘P`). Details: `ROADMAP.md` north star.
 
 ---
