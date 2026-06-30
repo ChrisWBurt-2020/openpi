@@ -7,14 +7,19 @@ import { FileToolRow } from './FileToolRow'
 import { GenericToolRow } from './GenericToolRow'
 
 import { ShellToolRow } from './ShellToolRow'
+import { TaskToolRow } from './TaskToolRow'
 
 const SHELL_TOOLS = new Set(['bash', 'sh', 'computer_bash', 'run_command'])
 const EDIT_TOOLS = new Set(['edit', 'multiedit', 'write', 'patch', 'apply_patch'])
 const FILE_TOOLS = new Set(['read'])
+const TASK_TOOLS = new Set(['task'])
 
 export interface ToolCardViewProps {
   card: ToolCard
   onFileClick?: (relativePath: string) => void
+  onOpenSubSession?: (taskId: string | null) => void
+  resolveTaskId?: (card: ToolCard) => string | null
+  resolveTaskStatus?: (taskId: string | null) => 'running' | 'done' | 'error' | null
   displayPreferences: DisplayPreferences
   shimmerActive: boolean
 }
@@ -35,6 +40,18 @@ export const ToolCardView: Component<ToolCardViewProps> = (props) => {
           card={props.card}
           onFileClick={props.onFileClick}
           displayPreferences={props.displayPreferences}
+        />
+      </div>
+    )
+  }
+  if (TASK_TOOLS.has(props.card.toolName)) {
+    return (
+      <div class={shimmerClass()}>
+        <TaskToolRow
+          card={props.card}
+          onOpenSubSession={props.onOpenSubSession}
+          resolveTaskId={props.resolveTaskId}
+          resolveTaskStatus={props.resolveTaskStatus}
         />
       </div>
     )
