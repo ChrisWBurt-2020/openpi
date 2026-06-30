@@ -73,6 +73,25 @@ export const openSessionSchema = z.object({
 })
 export type OpenSession = z.infer<typeof openSessionSchema>
 
+/**
+ * Sub-session task id validation: must be a single relative path segment.
+ * Catches path-traversal attempts (`../`, `..\\`, NUL) and absolute paths
+ * before they reach `fs.readdirSync`. The actual pi-task ID format
+ * (`xxxxxxxx-xxxx`, lowercase alphanumeric) is a subset of this.
+ */
+const SAFE_TASK_ID = /^[A-Za-z0-9._-]{1,80}$/
+
+export const resolveSubSessionPathSchema = z.object({
+  cwd: z.string().min(1),
+  taskId: z.string().regex(SAFE_TASK_ID, 'invalid taskId'),
+})
+export type ResolveSubSessionPath = z.infer<typeof resolveSubSessionPathSchema>
+
+export const readTaskSessionHistorySchema = z.object({
+  cwd: z.string().min(1),
+})
+export type ReadTaskSessionHistory = z.infer<typeof readTaskSessionHistorySchema>
+
 export const sessionMessagesRequestSchema = z.object({
   path: z.string().min(1),
   /** Maximum rendered messages to return. Main caps this defensively. */
@@ -361,6 +380,8 @@ export const sessionHistoryToolCardSchema = z.object({
   output: z.string(),
   isError: z.boolean(),
   streaming: z.boolean(),
+  details: z.record(z.string(), z.unknown()).optional(),
+  startedAt: z.number().optional(),
 })
 export type SessionHistoryToolCard = z.infer<typeof sessionHistoryToolCardSchema>
 

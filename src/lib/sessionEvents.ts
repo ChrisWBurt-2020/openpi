@@ -126,6 +126,7 @@ export function applySessionEvent(
             output: '',
             isError: false,
             streaming: true,
+            startedAt: Date.now(),
           },
         ],
       } as Message
@@ -140,11 +141,21 @@ export function applySessionEvent(
       const lastA = last as AssistantMsg
       const toolCallId = event.toolCallId as string
       const output = resultText(event.partialResult)
+      const partialDetails =
+        event.details && typeof event.details === 'object'
+          ? (event.details as Record<string, unknown>)
+          : undefined
       const next = [...messages]
       next[next.length - 1] = {
         ...lastA,
         toolCards: lastA.toolCards.map((card) =>
-          card.toolCallId === toolCallId ? { ...card, output } : card
+          card.toolCallId === toolCallId
+            ? {
+                ...card,
+                output,
+                ...(partialDetails ? { details: { ...card.details, ...partialDetails } } : {}),
+              }
+            : card
         ),
       } as Message
       return next
@@ -157,12 +168,22 @@ export function applySessionEvent(
       const lastA = last as AssistantMsg
       const toolCallId = event.toolCallId as string
       const output = resultText(event.result)
+      const endDetails =
+        event.details && typeof event.details === 'object'
+          ? (event.details as Record<string, unknown>)
+          : undefined
       const next = [...messages]
       next[next.length - 1] = {
         ...lastA,
         toolCards: lastA.toolCards.map((card) =>
           card.toolCallId === toolCallId
-            ? { ...card, output, isError: !!event.isError, streaming: false }
+            ? {
+                ...card,
+                output,
+                isError: !!event.isError,
+                streaming: false,
+                ...(endDetails ? { details: endDetails } : {}),
+              }
             : card
         ),
       } as Message
