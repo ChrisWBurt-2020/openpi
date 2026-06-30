@@ -1,63 +1,72 @@
-import type { Component } from 'solid-js'
+import { For, type Component } from 'solid-js'
 
 /**
- * 5×5 animated SVG dot grid (opencode v2 `SessionProgressIndicatorV2` pattern).
+ * 5x5 animated SVG dot grid (opencode v2 SessionProgressIndicatorV2 pattern).
  *
- * Used as the universal "still running" indicator across every tool row
- * (replaces the older single `·` `tool-streaming-dot`). Each cell fades
- * in a cascading sequence so the grid reads as a heartbeat / clock face
- * rather than a generic loading spinner.
+ * Uses CSS custom properties (@property registered) for per-dot animation
+ * bounds. The keyframe references --progress-hi and --progress-lo which
+ * each dot sets inline, so each dot can have its own lo/hi opacity range
+ * and a deterministic per-dot delay. This is the same pattern as
+ * assistant-ui's DotMatrix and opencode-desktop's progress indicator.
  *
  * Modes:
- *  - `running`    — accent color, used for foreground/active tools.
- *  - `background` — warn color, used when the tool is a background handoff
- *                   (e.g. a `task` call that returns immediately while the
- *                   sub-agent continues in `.pi/artifacts/`).
+ *  - 'running'    - accent color, used for foreground/active tools.
+ *  - 'background' - warn color, used for background handoff tasks.
  */
 const GRID = 5
-const DOT = 3
-const GAP = 1.5
-const ORIGIN = 2
-const SIZE = ORIGIN * 2 + GRID * DOT + (GRID - 1) * GAP
+const DOT_R = 1
+const STEP = 3.6
+const ORIGIN = 1.8
+const SIZE = 18
+const CYCLE_S = 4.5
+const STEP_S = 0.18
 
 export const SessionProgressDot: Component<{ status?: 'running' | 'background' }> = (
   props
 ) => {
   const status = () => props.status ?? 'running'
-  const cells = Array.from({ length: GRID * GRID }, (_, index) => {
-    const x = ORIGIN + (index % GRID) * (DOT + GAP)
-    const y = ORIGIN + Math.floor(index / GRID) * (DOT + GAP)
-    return { index, x, y }
-  })
+  const color = () =>
+    status() === 'background' ? 'var(--task-warn, #b8860b)' : 'var(--ink)'
 
   return (
     <svg
       class="progress-dots"
       data-status={status()}
-      width={SIZE}
-      height={SIZE}
       viewBox={`0 0 ${SIZE} ${SIZE}`}
       style={{
-        width: '20px',
-        height: '20px',
+        width: '18px',
+        height: '18px',
         'flex-shrink': '0',
-        display: 'inline-block',
-        'vertical-align': 'middle',
+        'align-self': 'center',
+        color: color(),
       }}
       aria-hidden="true"
     >
-      {cells.map((c) => (
-        <rect
-          x={c.x}
-          y={c.y}
-          width={DOT}
-          height={DOT}
-          rx={0.5}
-          class="progress-cell"
-          data-index={c.index}
-          style={{ fill: 'var(--ink)' }}
-        />
-      ))}
+      <For each={Array.from({ length: GRID * GRID }, (_, i) => i)}>
+        {(index) => {
+          const row = Math.floor(index / GRID)
+          const col = index % GRID
+          const cx = ORIGIN + col * STEP
+          const cy = ORIGIN + row * STEP
+          const delay = -(index * STEP_S)
+          return (
+            <circle
+              cx={cx}
+              cy={cy}
+              r={DOT_R}
+              data-index={index}
+              style={{
+                fill: 'currentColor',
+                animation: `session-progress-pulse ${CYCLE_S}s ease-in-out ${delay}s infinite`,
+                '--progress-hi': '1',
+                '--progress-lo': '0.15',
+                'transition-property': '--progress-hi, --progress-lo, opacity',
+                'transition-duration': '0.3s',
+              }}
+            />
+          )
+        }}
+      </For>
     </svg>
   )
 }
