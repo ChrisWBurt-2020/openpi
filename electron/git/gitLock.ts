@@ -30,30 +30,23 @@ export class GitLock {
     const prev = this.chains.get(key) ?? Promise.resolve()
     const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs
 
-    // Build the chain: wait for the previous task, then run this one.
-    // Note: the .then(() => ...) creates an intermediate Promise that
-    // assimilates withTimeout()'s rejection. Node's unhandledRejection
-    // detector tracks each Promise separately, so this can produce
-    // `Unhandled Rejection` warnings on a timeout/failure path even though
-    // the caller does receive the rejection via `work`. We accept those
-    // warnings as a trade-off for the simpler chain construction; the
-    // alternative (an async/await runChained) lost the serialization
-    // ordering because the `set + await prev` race.
     const work = prev.then(() => this.withTimeout(fn, timeoutMs, key))
 
-    // Track the chain so subsequent callers wait on us. Use `.finally` to
-    // remove our entry once we've settled, preventing the map from growing
-    // unboundedly as workspaces open and close. The `.finally` swallows
-    // rejections from `work` so the chains map never holds a rejecting
-    // promise (which would make the next caller's `await` throw).
-    const tracked = work.finally(() => {
+    const cleanup = () => {
       if (this.chains.get(key) === tracked) {
         this.chains.delete(key)
       }
-    })
+    }
+    const tracked = work.then(
+      () => {
+        cleanup()
+      },
+      () => {
+        cleanup()
+      }
+    )
     this.chains.set(key, tracked)
 
-    // Surface errors to the caller, but never leak them into the chain.
     return work
   }
 
