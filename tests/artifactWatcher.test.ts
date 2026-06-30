@@ -32,7 +32,7 @@ describe('artifactWatcher', () => {
             openCount: 1,
           }),
         ],
-      }),
+      })
     )
     fs.rmSync(cwd, { recursive: true, force: true })
   })

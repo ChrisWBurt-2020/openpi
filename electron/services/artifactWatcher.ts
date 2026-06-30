@@ -75,7 +75,7 @@ export function startArtifactWatcher(deps: ArtifactWatcherDeps): { stop: () => v
     try {
       const entries = fs.readdirSync(dir, { withFileTypes: true })
       const todoNames = new Set(
-        entries.filter((e) => e.isFile() && /^TODO.*\.md$/i.test(e.name)).map((e) => e.name),
+        entries.filter((e) => e.isFile() && /^TODO.*\.md$/i.test(e.name)).map((e) => e.name)
       )
       for (const name of todoNames) {
         const filePath = path.join(dir, name)

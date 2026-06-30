@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -26,7 +26,7 @@ describe('pi-task JSON state helpers', () => {
     writeFileSync(sessionPath, '{}\n')
     writeFileSync(
       join(cwd, '.pi', 'task-session-history.json'),
-      JSON.stringify([{ id: 'mqzjxmuo-6c34', sessionRef: sessionPath, status: 'done' }]),
+      JSON.stringify([{ id: 'mqzjxmuo-6c34', sessionRef: sessionPath, status: 'done' }])
     )
 
     expect(resolveSubSessionPath(artifactsDir, 'mqzjxmuo-6c34')).toBe(sessionPath)
@@ -46,7 +46,7 @@ describe('pi-task JSON state helpers', () => {
       ],
       'scout',
       'Scan pi-diff repo',
-      startedAt + 500,
+      startedAt + 500
     )
 
     expect(resolved).toBe('mqzjxmuo-6c34')
@@ -58,14 +58,14 @@ describe('pi-task JSON state helpers', () => {
     mkdirSync(join(cwd, '.pi', 'artifacts', 'sessions', taskId), { recursive: true })
     writeFileSync(
       join(cwd, '.pi', 'task-session-history.json'),
-      JSON.stringify([{ id: taskId, status: 'cancelled', agentType: 'scout' }]),
+      JSON.stringify([{ id: taskId, status: 'cancelled', agentType: 'scout' }])
     )
     writeFileSync(
       join(cwd, '.pi', 'artifacts', 'sessions', taskId, 'session.jsonl'),
       `${JSON.stringify({
         type: 'message',
         message: { role: 'assistant', content: [{ type: 'text', text: 'working' }] },
-      })}\n`,
+      })}\n`
     )
 
     expect(readTaskSessionHistory(cwd)[0]?.status).toBe('cancelled')
@@ -80,11 +80,11 @@ describe('pi-task JSON state helpers', () => {
       `${JSON.stringify({
         type: 'message',
         message: { role: 'assistant', content: [{ type: 'text', text: 'working' }] },
-      })}\n`,
+      })}\n`
     )
 
     expect(
-      normalizeTaskHistoryStatus(cwd, taskId, 'cancelled', '%12', (paneId) => paneId === '%12'),
+      normalizeTaskHistoryStatus(cwd, taskId, 'cancelled', '%12', (paneId) => paneId === '%12')
     ).toBe('running')
   })
 
@@ -94,14 +94,14 @@ describe('pi-task JSON state helpers', () => {
     mkdirSync(join(cwd, '.pi', 'artifacts', 'sessions', taskId), { recursive: true })
     writeFileSync(
       join(cwd, '.pi', 'task-session-history.json'),
-      JSON.stringify([{ id: taskId, status: 'cancelled', agentType: 'scout' }]),
+      JSON.stringify([{ id: taskId, status: 'cancelled', agentType: 'scout' }])
     )
     writeFileSync(
       join(cwd, '.pi', 'artifacts', 'sessions', taskId, 'session.jsonl'),
       `${JSON.stringify({
         type: 'message',
         message: { role: 'assistant', content: [], stopReason: 'stop' },
-      })}\n`,
+      })}\n`
     )
 
     expect(readTaskSessionHistory(cwd)[0]?.status).toBe('done')
@@ -122,7 +122,7 @@ describe('pi-task JSON state helpers', () => {
       ],
       'explore',
       'Scan pi-diff repo',
-      currentStartedAt,
+      currentStartedAt
     )
 
     expect(resolved).toBeNull()

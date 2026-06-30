@@ -70,7 +70,7 @@ export function normalizeTaskHistoryStatus(
   taskId: string,
   status: string | undefined,
   paneId?: string,
-  paneExists: (paneId: string) => boolean = tmuxPaneExists,
+  paneExists: (paneId: string) => boolean = tmuxPaneExists
 ): string | undefined {
   if (status !== 'cancelled') return status
   const executionStatus = readSubSessionExecutionStatus(cwd, taskId)

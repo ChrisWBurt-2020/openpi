@@ -3,14 +3,14 @@ import { resolveTaskStatusFromHistory } from '../src/lib/taskHistory'
 
 describe('task history status resolver', () => {
   it('maps done history to done status', () => {
-    expect(resolveTaskStatusFromHistory([{ id: 'mr09tr2f-44bf', status: 'done' }], 'mr09tr2f-44bf')).toBe(
-      'done',
-    )
+    expect(
+      resolveTaskStatusFromHistory([{ id: 'mr09tr2f-44bf', status: 'done' }], 'mr09tr2f-44bf')
+    ).toBe('done')
   })
 
   it('maps running history to running status', () => {
     expect(
-      resolveTaskStatusFromHistory([{ id: 'mr09tr2f-44bf', status: 'running' }], 'mr09tr2f-44bf'),
+      resolveTaskStatusFromHistory([{ id: 'mr09tr2f-44bf', status: 'running' }], 'mr09tr2f-44bf')
     ).toBe('running')
   })
 

@@ -25,7 +25,7 @@ export const GenericToolRow: Component<GenericToolRowProps> = (props) => {
       >
         <span class="tool-ran-label">{labelForTool(props.card.toolName)}</span>
         <span class="tool-ran-preview">{displayPreview()}</span>
-        
+
         <Show when={hasOutput() && !props.card.streaming}>
           <span class="tool-chevron" data-open={open()} aria-hidden="true">
             {open() ? '⌄' : '›'}

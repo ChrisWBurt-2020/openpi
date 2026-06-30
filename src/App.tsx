@@ -9,6 +9,7 @@
  *   - className  → class in SolidJS JSX
  */
 import { createEffect, createMemo, createSignal, onMount, Show } from 'solid-js'
+import { ConfirmDialog } from './components/ConfirmDialog'
 import { ExtensionUiOverlay } from './components/ExtensionUiOverlay'
 import { RefsPickerPanel } from './components/git/RefsPickerPanel'
 import { Homescreen } from './components/Homescreen'
@@ -18,7 +19,6 @@ import { TopBar } from './components/TopBar'
 import { TerminalPanel } from './components/terminal/TerminalPanel'
 import { Welcome } from './components/Welcome'
 import { AppOverlays } from './components/workbench/AppOverlays'
-import { ConfirmDialog } from './components/ConfirmDialog'
 import { ConversationWorkspace } from './components/workbench/ConversationWorkspace'
 import { GitSidePanel } from './components/workbench/GitSidePanel'
 import { RightPanel } from './components/workbench/RightPanel'
@@ -106,7 +106,9 @@ export default function App() {
   // Two-step: clicking delete opens a confirm modal with the session title.
   // Confirming moves the session file to the OS trash via the IPC handler.
   // For active .jsonl files the IPC archives first, then trashes.
-  const [pendingDelete, setPendingDelete] = createSignal<{ path: string; title: string } | null>(null)
+  const [pendingDelete, setPendingDelete] = createSignal<{ path: string; title: string } | null>(
+    null
+  )
   const requestDeleteSession = (sessionPath: string) => {
     const target = session.sessions.find((s) => s.path === sessionPath)
     setPendingDelete({

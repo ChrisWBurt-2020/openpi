@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { describe, expect, it } from 'vitest'
 import {
-  PI_TASK_SHORT_ID,
   getSubSessionDir,
+  PI_TASK_SHORT_ID,
   resolveSubSessionPath,
 } from '../electron/services/piTaskArtifacts'
 
@@ -42,7 +42,10 @@ describe('resolveSubSessionPath', () => {
     const artifactsDir = makeArtifactsDir()
     const taskDir = path.join(artifactsDir, 'sessions', 'mqzbadgj-3a1e')
     mkdirSync(taskDir, { recursive: true })
-    const file = path.join(taskDir, '2026-06-29T14-27-08-162Z_019f13c6-df02-70e2-b122-607f386781c1.jsonl')
+    const file = path.join(
+      taskDir,
+      '2026-06-29T14-27-08-162Z_019f13c6-df02-70e2-b122-607f386781c1.jsonl'
+    )
     writeFileSync(file, '{}\n')
 
     try {

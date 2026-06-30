@@ -211,10 +211,7 @@ export function ConversationWorkspace(props: ConversationWorkspaceProps) {
               >
                 <ArrowLeft size={12} />
                 <span data-slot="sub-session-breadcrumb-label">
-                  <Show
-                    when={props.session.parentStack().length > 0}
-                    fallback={<>Sub-session</>}
-                  >
+                  <Show when={props.session.parentStack().length > 0} fallback={<>Sub-session</>}>
                     Back to {props.session.parentStack().at(-1)?.name ?? 'parent'}
                   </Show>
                 </span>

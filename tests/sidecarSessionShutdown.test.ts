@@ -20,9 +20,7 @@ function shutdownReasonForStart(opts: {
 
 describe('sidecar session_shutdown reasons', () => {
   it('fork when branching', () => {
-    expect(shutdownReasonForStart({ sessionFile: '/a.jsonl', forkEntryId: 'e1' })).toBe(
-      'fork',
-    )
+    expect(shutdownReasonForStart({ sessionFile: '/a.jsonl', forkEntryId: 'e1' })).toBe('fork')
   })
 
   it('resume when opening existing session', () => {

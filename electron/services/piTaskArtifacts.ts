@@ -8,11 +8,15 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { findTaskIdForToolCall, MAX_TIME_DELTA_MS, type TaskHistoryEntry } from '../../src/lib/taskHistory'
+import {
+  findTaskIdForToolCall,
+  MAX_TIME_DELTA_MS,
+  type TaskHistoryEntry,
+} from '../../src/lib/taskHistory'
 import { normalizeTaskHistoryStatus } from './piTaskStatus'
 
-export { findTaskIdForToolCall, MAX_TIME_DELTA_MS }
 export type { TaskHistoryEntry }
+export { findTaskIdForToolCall, MAX_TIME_DELTA_MS }
 
 export const PI_TASK_SHORT_ID = /^[A-Za-z0-9._-]{1,80}$/
 
@@ -92,9 +96,7 @@ export function resolveMostRecentSubSessionPath(artifactsDir: string): string | 
         if (best === null || stat.mtimeMs > best.mtimeMs) {
           best = { file, mtimeMs: stat.mtimeMs }
         }
-      } catch {
-        continue
-      }
+      } catch {}
     }
   }
   return best?.file ?? null
@@ -121,7 +123,12 @@ export function readTaskSessionHistory(cwd: string): TaskHistoryEntry[] {
       const historyEntry = entry as TaskHistoryEntry
       out.push({
         ...historyEntry,
-        status: normalizeTaskHistoryStatus(cwd, historyEntry.id, historyEntry.status, historyEntry.paneId),
+        status: normalizeTaskHistoryStatus(
+          cwd,
+          historyEntry.id,
+          historyEntry.status,
+          historyEntry.paneId
+        ),
       })
     }
   }

@@ -29,9 +29,9 @@
  *    running task with a live session file may be referenced.
  */
 
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent'
 
 // UUID v4 shape: 8-4-4-4-12 hex. The model hallucinates these because
 // the SDK exposes them in tool messages.
@@ -45,16 +45,14 @@ const CONVERSATION_ID = /^[A-Za-z0-9._-]{1,80}$/
 
 // Terminal status values — if a task is in the history with one of
 // these, the model recycling its id is a hallucination, not a resume.
-const TERMINAL_STATUSES = new Set(["done", "cancelled", "timeout", "failed"])
+const TERMINAL_STATUSES = new Set(['done', 'cancelled', 'timeout', 'failed'])
 
-function loadConversationRegistry(
-  cwd: string,
-): Record<string, { task_id?: string }> {
-  const file = join(cwd, ".pi", "artifacts", "task-sessions.json")
+function loadConversationRegistry(cwd: string): Record<string, { task_id?: string }> {
+  const file = join(cwd, '.pi', 'artifacts', 'task-sessions.json')
   if (!existsSync(file)) return {}
   try {
-    const raw = JSON.parse(readFileSync(file, "utf-8"))
-    return raw && typeof raw === "object" ? raw : {}
+    const raw = JSON.parse(readFileSync(file, 'utf-8'))
+    return raw && typeof raw === 'object' ? raw : {}
   } catch {
     return {}
   }
@@ -68,18 +66,18 @@ function loadConversationRegistry(
  * yield an empty set (we fail open rather than blocking fresh calls).
  */
 function loadTerminalTaskIds(cwd: string): Set<string> {
-  const file = join(cwd, ".pi", "task-session-history.json")
+  const file = join(cwd, '.pi', 'task-session-history.json')
   if (!existsSync(file)) return new Set()
   try {
-    const raw = JSON.parse(readFileSync(file, "utf-8"))
+    const raw = JSON.parse(readFileSync(file, 'utf-8'))
     if (!Array.isArray(raw)) return new Set()
     const out = new Set<string>()
     for (const entry of raw) {
       if (
         entry &&
-        typeof entry === "object" &&
-        typeof (entry as { id?: unknown }).id === "string" &&
-        typeof (entry as { status?: unknown }).status === "string" &&
+        typeof entry === 'object' &&
+        typeof (entry as { id?: unknown }).id === 'string' &&
+        typeof (entry as { status?: unknown }).status === 'string' &&
         TERMINAL_STATUSES.has((entry as { status: string }).status)
       ) {
         out.add((entry as { id: string }).id)
@@ -92,13 +90,12 @@ function loadTerminalTaskIds(cwd: string): Set<string> {
 }
 
 export default function (pi: ExtensionAPI) {
-  pi.on("tool_call", (event) => {
-    if (event.toolName !== "task") return
+  pi.on('tool_call', (event) => {
+    if (event.toolName !== 'task') return
 
     const input = event.input as Record<string, unknown>
-    const taskId = typeof input.task_id === "string" ? input.task_id : null
-    const conversationId =
-      typeof input.conversation_id === "string" ? input.conversation_id : null
+    const taskId = typeof input.task_id === 'string' ? input.task_id : null
+    const conversationId = typeof input.conversation_id === 'string' ? input.conversation_id : null
 
     // ── Rule 5: invalid conversation_id is stripped.
     if (conversationId !== null && !CONVERSATION_ID.test(conversationId)) {
@@ -106,11 +103,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     // ── Rule 4: when both are set, the conversation registry wins.
-    if (
-      conversationId !== null &&
-      CONVERSATION_ID.test(conversationId) &&
-      taskId !== null
-    ) {
+    if (conversationId !== null && CONVERSATION_ID.test(conversationId) && taskId !== null) {
       const registry = loadConversationRegistry(event.cwd)
       const mapped = registry[conversationId]?.task_id
       if (mapped && mapped !== taskId) {

@@ -15,19 +15,15 @@ describe('taskToolHelpers', () => {
 
   it('detects background handoff receipt', () => {
     const details = parseTaskDetails({ agent_type: 'scout' }, { background: true })
-    expect(
-      isBackgroundHandoff(
-        details,
-        'Started task abc with scout.\nDo not poll.',
-        false,
-      ),
-    ).toBe(true)
+    expect(isBackgroundHandoff(details, 'Started task abc with scout.\nDo not poll.', false)).toBe(
+      true
+    )
   })
 
   it('foreground done is not handoff', () => {
     const details = parseTaskDetails(
       { background: false },
-      { phase: 'done', tool_uses: 3, duration_ms: 4500 },
+      { phase: 'done', tool_uses: 3, duration_ms: 4500 }
     )
     expect(isBackgroundHandoff(details, 'Summary text', false)).toBe(false)
   })

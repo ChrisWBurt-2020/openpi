@@ -25,7 +25,7 @@ export type TaskStatus = 'running' | 'done' | 'error'
 
 export function resolveTaskStatusFromHistory(
   history: TaskHistoryEntry[],
-  taskId: string | null,
+  taskId: string | null
 ): TaskStatus | null {
   if (!taskId) return null
   const entry = history.find((item) => item.id === taskId)
@@ -48,7 +48,7 @@ export function findTaskIdForToolCall(
   history: TaskHistoryEntry[],
   agentType: string | null | undefined,
   description: string | null | undefined,
-  toolStartedAt: number | null | undefined,
+  toolStartedAt: number | null | undefined
 ): string | null {
   if (!history.length) return null
   const at = (agentType ?? '').trim()

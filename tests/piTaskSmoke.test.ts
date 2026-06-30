@@ -12,19 +12,23 @@ describe('pi-task JSON smoke fixture', () => {
       fs.mkdirSync(path.join(cwd, '.pi', 'artifacts', 'sessions', taskId), { recursive: true })
       fs.writeFileSync(
         path.join(cwd, '.pi', 'task-session-history.json'),
-        JSON.stringify([{ id: taskId, status: 'done', agentType: 'scout' }]),
+        JSON.stringify([{ id: taskId, status: 'done', agentType: 'scout' }])
       )
       fs.writeFileSync(
         path.join(cwd, '.pi', 'artifacts', 'sessions', taskId, 'session.jsonl'),
         `${JSON.stringify({
           type: 'message',
-          message: { role: 'assistant', stopReason: 'stop', content: [{ type: 'text', text: 'done' }] },
-        })}\n`,
+          message: {
+            role: 'assistant',
+            stopReason: 'stop',
+            content: [{ type: 'text', text: 'done' }],
+          },
+        })}\n`
       )
 
       expect(readTaskSessionHistory(cwd)[0]?.id).toBe(taskId)
       expect(resolveSubSessionPath(path.join(cwd, '.pi', 'artifacts'), taskId)).toContain(
-        'session.jsonl',
+        'session.jsonl'
       )
     } finally {
       fs.rmSync(cwd, { recursive: true, force: true })

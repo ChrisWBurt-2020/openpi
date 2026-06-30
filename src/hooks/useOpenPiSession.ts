@@ -25,9 +25,6 @@ import type {
 } from '../lib/ipc'
 import { applySessionEvent } from '../lib/sessionEvents'
 import { buildSessionPromptPayload, buildSessionPromptText } from '../lib/sessionPrompt'
-import type { Message } from '../types/session'
-import { useAgentRunMetrics } from './useAgentRunMetrics'
-import { useExtensionTrackers } from './useExtensionTrackers'
 import { isSubSessionPath } from '../lib/subSessionNavigation'
 import {
   findTaskIdForToolCall,
@@ -35,7 +32,9 @@ import {
   type TaskHistoryEntry,
 } from '../lib/taskHistory'
 import { isValidPiTaskId } from '../lib/taskToolHelpers'
-import type { ToolCard } from '../types/session'
+import type { Message, ToolCard } from '../types/session'
+import { useAgentRunMetrics } from './useAgentRunMetrics'
+import { useExtensionTrackers } from './useExtensionTrackers'
 
 function taskHistorySignature(entries: TaskHistoryEntry[]): string {
   return entries
@@ -51,6 +50,7 @@ interface ParentStackEntry {
 }
 
 export { isSubSessionPath }
+
 import { useRemoteSessionSync } from './useRemoteSessionSync'
 import { useSessionHistory } from './useSessionHistory'
 import { useSessionIndex } from './useSessionIndex'
@@ -220,7 +220,9 @@ export function useOpenPiSession() {
       const refresh = async () => {
         if (!cwd || disposed) return
         try {
-          const entries = (await window.openpi.readTaskSessionHistory({ cwd })) as TaskHistoryEntry[]
+          const entries = (await window.openpi.readTaskSessionHistory({
+            cwd,
+          })) as TaskHistoryEntry[]
           if (disposed) return
           const nextSignature = taskHistorySignature(entries)
           if (nextSignature !== signature) {
@@ -389,10 +391,7 @@ export function useOpenPiSession() {
     const stack = parentStack()
     const currentPath = current.sessionFile
     if (currentPath && (stack.length === 0 || stack[stack.length - 1]?.path !== currentPath)) {
-      setParentStack([
-        ...stack,
-        { path: currentPath, name: current.sessionName ?? null, cwd },
-      ])
+      setParentStack([...stack, { path: currentPath, name: current.sessionName ?? null, cwd }])
     }
     setError(null)
     await window.openpi.openSession({ path })
@@ -710,9 +709,7 @@ export function useOpenPiSession() {
      */
     resolveTaskIdForCard: (card: ToolCard): string | null => {
       // 1. Tracker
-      const fromTracker = trackers
-        .tasks()
-        .find((t) => t.tempId === card.toolCallId)?.taskId
+      const fromTracker = trackers.tasks().find((t) => t.tempId === card.toolCallId)?.taskId
       if (typeof fromTracker === 'string' && isValidPiTaskId(fromTracker)) {
         return fromTracker
       }

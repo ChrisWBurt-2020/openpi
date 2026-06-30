@@ -15,7 +15,7 @@ export interface TaskToolDetails {
 
 export function parseTaskDetails(
   args: Record<string, unknown>,
-  details?: Record<string, unknown>,
+  details?: Record<string, unknown>
 ): TaskToolDetails {
   const d = details ?? {}
   return {
@@ -33,10 +33,7 @@ export function parseTaskDetails(
           ? args.description
           : undefined,
     phase: typeof d.phase === 'string' ? d.phase : undefined,
-    background:
-      typeof d.background === 'boolean'
-        ? d.background
-        : args.background !== false,
+    background: typeof d.background === 'boolean' ? d.background : args.background !== false,
     tool_uses:
       typeof d.tool_uses === 'number'
         ? d.tool_uses
@@ -44,8 +41,7 @@ export function parseTaskDetails(
           ? d.toolCalls
           : undefined,
     duration_ms: typeof d.duration_ms === 'number' ? d.duration_ms : undefined,
-    conversation_id:
-      typeof d.conversation_id === 'string' ? d.conversation_id : undefined,
+    conversation_id: typeof d.conversation_id === 'string' ? d.conversation_id : undefined,
     tmux_session: typeof d.tmux_session === 'string' ? d.tmux_session : undefined,
   }
 }
@@ -67,7 +63,7 @@ export function isTaskForeground(args: Record<string, unknown>): boolean {
 export function isBackgroundHandoff(
   details: TaskToolDetails,
   output: string,
-  streaming: boolean,
+  streaming: boolean
 ): boolean {
   if (streaming) return false
   if (details.background === true && !details.phase) return true

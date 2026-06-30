@@ -34,7 +34,11 @@ export function ConfirmDialog(props: Props) {
           </div>
           <p class="confirm-dialog-body">{props.message}</p>
           <div class="confirm-dialog-footer">
-            <button type="button" class="confirm-dialog-btn confirm-dialog-btn-ghost" onClick={props.onCancel}>
+            <button
+              type="button"
+              class="confirm-dialog-btn confirm-dialog-btn-ghost"
+              onClick={props.onCancel}
+            >
               {props.cancelLabel ?? 'Cancel'}
             </button>
             <button

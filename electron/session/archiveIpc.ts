@@ -4,8 +4,8 @@ import { type IpcMain, shell } from 'electron'
 import type { ArchivedSessionItem, ArchiveSessionsResult, OutputLine } from '../../src/lib/ipc'
 import {
   archiveSessionsRequestSchema,
-  deleteSessionsRequestSchema,
   deleteSessionRequestSchema,
+  deleteSessionsRequestSchema,
   IPC,
   unarchiveSessionsRequestSchema,
 } from '../../src/lib/ipc'

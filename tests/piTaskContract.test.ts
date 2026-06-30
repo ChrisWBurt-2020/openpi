@@ -15,7 +15,8 @@ describe('pi-task v0.2.0 contract', () => {
   })
 
   it('Unknown task_id error is the exact string from pi-task v0.2.0', () => {
-    const expectedSubstring = 'No active or completed task session with that ID/session name was found'
+    const expectedSubstring =
+      'No active or completed task session with that ID/session name was found'
     // We assert the substring that pi-task emits so OpenPi tests don't drift.
     expect(expectedSubstring).toContain('No active or completed task session')
   })

@@ -89,15 +89,15 @@ export function ReviewFileCard(props: ReviewFileCardProps) {
   const controller = useReviewLineComments({
     filePath: props.item.path,
     fileContent: () => {
-          if (props.isCommentActive) {
-            const fromFile = props.fileContentFor(props.item.path)
-            if (fromFile) return fromFile
-          }
-          // Fallback: use the diff content already loaded for the review view.
-          // The diff view always has the full new/old content for line extraction.
-          const diff = loadedGitDiff()
-          return diff?.newContent ?? diff?.oldContent ?? null
-        },
+      if (props.isCommentActive) {
+        const fromFile = props.fileContentFor(props.item.path)
+        if (fromFile) return fromFile
+      }
+      // Fallback: use the diff content already loaded for the review view.
+      // The diff view always has the full new/old content for line extraction.
+      const diff = loadedGitDiff()
+      return diff?.newContent ?? diff?.oldContent ?? null
+    },
     comments: () => props.comments,
     onAdd: props.onAddComment,
     onRemove: props.onRemoveComment,

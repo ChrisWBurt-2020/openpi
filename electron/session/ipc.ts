@@ -1,4 +1,5 @@
 import * as crypto from 'node:crypto'
+import path from 'node:path'
 import { type BrowserWindow, dialog, type IpcMain } from 'electron'
 import type {
   BashExecutionResult,
@@ -31,13 +32,15 @@ import {
 } from '../../src/lib/ipc'
 import { createWorktree, generateWorktreePath, getCurrentBranch } from '../git/worktree'
 import type { SidecarCommand, SidecarMessage } from '../pi/sidecar'
+import {
+  readTaskSessionHistory,
+  resolveMostRecentSubSessionPath,
+  resolveSubSessionPath,
+} from '../services/piTaskArtifacts'
 import { highRiskShellReason } from '../services/shellEnv'
 import type { SessionState } from '../session/sessionHost'
 import type { SessionIndexStore } from '../session/sessionIndex'
 import { emptyUsageSummary } from '../session/sessionUsage'
-import { resolveSubSessionPath, resolveMostRecentSubSessionPath } from '../services/piTaskArtifacts'
-import { readTaskSessionHistory } from '../services/piTaskArtifacts'
-import path from 'node:path'
 
 interface ConfirmMutationOptions {
   title: string

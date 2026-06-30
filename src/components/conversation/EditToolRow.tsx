@@ -92,7 +92,7 @@ export const EditToolRow: Component<EditToolRowProps> = (props) => {
             </Show>
           </span>
         </Show>
-        
+
         <Show when={!props.card.streaming}>
           <span class="tool-chevron" data-open={open()} aria-hidden="true">
             {open() ? '⌄' : '›'}

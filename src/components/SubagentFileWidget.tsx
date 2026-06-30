@@ -141,7 +141,7 @@ export function SubagentFileTray(props: SubagentFileTrayProps) {
 
 export function TodoListTray(props: TodoListTrayProps) {
   const activeFile = createMemo(() =>
-    props.todoFiles.find((file) => file.items.some((item) => !item.checked)),
+    props.todoFiles.find((file) => file.items.some((item) => !item.checked))
   )
   const openItems = createMemo(() => activeFile()?.items.filter((item) => !item.checked) ?? [])
 

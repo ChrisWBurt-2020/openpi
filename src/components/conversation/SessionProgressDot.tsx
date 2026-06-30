@@ -1,4 +1,4 @@
-import { For, type Component } from 'solid-js'
+import { type Component, For } from 'solid-js'
 
 /**
  * 5x5 animated SVG dot grid (opencode v2 SessionProgressIndicatorV2 pattern).
@@ -21,12 +21,9 @@ const SIZE = 18
 const CYCLE_S = 4.5
 const STEP_S = 0.18
 
-export const SessionProgressDot: Component<{ status?: 'running' | 'background' }> = (
-  props
-) => {
+export const SessionProgressDot: Component<{ status?: 'running' | 'background' }> = (props) => {
   const status = () => props.status ?? 'running'
-  const color = () =>
-    status() === 'background' ? 'var(--task-warn, #b8860b)' : 'var(--ink)'
+  const color = () => (status() === 'background' ? 'var(--task-warn, #b8860b)' : 'var(--ink)')
 
   return (
     <svg

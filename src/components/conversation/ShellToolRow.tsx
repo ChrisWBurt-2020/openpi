@@ -34,7 +34,6 @@ export const ShellToolRow: Component<ShellToolRowProps> = (props) => {
             setOpen((v) => !v)
           }
         }}
-        
         style={{ cursor: hasOutput() ? 'pointer' : 'default' }}
       >
         <span class="tool-ran-label">{labelForTool(props.card.toolName)}</span>

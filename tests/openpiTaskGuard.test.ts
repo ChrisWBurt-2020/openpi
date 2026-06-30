@@ -37,7 +37,7 @@ function isValidPiTaskId(s: unknown): boolean {
 function applyGuard(
   input: Record<string, unknown>,
   registry: Record<string, { task_id: string }> = {},
-  history: Array<{ id: string; status: string }> = [],
+  history: Array<{ id: string; status: string }> = []
 ): Record<string, unknown> {
   const out = { ...input }
 
@@ -56,10 +56,7 @@ function applyGuard(
     delete out.task_id
   }
 
-  if (
-    typeof out.conversation_id === 'string' &&
-    !isValidPiTaskId(out.conversation_id)
-  ) {
+  if (typeof out.conversation_id === 'string' && !isValidPiTaskId(out.conversation_id)) {
     delete out.conversation_id
   }
 
@@ -72,7 +69,7 @@ function applyGuard(
     PI_TASK_ID_RE.test(out.task_id)
   ) {
     const terminalIds = new Set(
-      history.filter((e) => TERMINAL_STATUSES.has(e.status)).map((e) => e.id),
+      history.filter((e) => TERMINAL_STATUSES.has(e.status)).map((e) => e.id)
     )
     if (terminalIds.has(out.task_id)) {
       delete out.task_id
@@ -108,36 +105,30 @@ describe('openpi-task-guard', () => {
     const result = applyGuard(
       { agent_type: 'scout', description: 'Research pi-diff repo', task_id: 'mqzhz574-b765' },
       {},
-      [{ id: 'mqzhz574-b765', status: 'cancelled' }],
+      [{ id: 'mqzhz574-b765', status: 'cancelled' }]
     )
     expect(result.task_id).toBeUndefined()
     expect(result.description).toBe('Research pi-diff repo')
   })
 
   it('strips a well-formed task_id that is in the history as done', () => {
-    const result = applyGuard(
-      { agent_type: 'scout', task_id: 'mqzhz574-b765' },
-      {},
-      [{ id: 'mqzhz574-b765', status: 'done' }],
-    )
+    const result = applyGuard({ agent_type: 'scout', task_id: 'mqzhz574-b765' }, {}, [
+      { id: 'mqzhz574-b765', status: 'done' },
+    ])
     expect(result.task_id).toBeUndefined()
   })
 
   it('strips a well-formed task_id that is in the history as failed', () => {
-    const result = applyGuard(
-      { agent_type: 'scout', task_id: 'mqzhz574-b765' },
-      {},
-      [{ id: 'mqzhz574-b765', status: 'failed' }],
-    )
+    const result = applyGuard({ agent_type: 'scout', task_id: 'mqzhz574-b765' }, {}, [
+      { id: 'mqzhz574-b765', status: 'failed' },
+    ])
     expect(result.task_id).toBeUndefined()
   })
 
   it('strips a well-formed task_id that is in the history as timeout', () => {
-    const result = applyGuard(
-      { agent_type: 'scout', task_id: 'mqzhz574-b765' },
-      {},
-      [{ id: 'mqzhz574-b765', status: 'timeout' }],
-    )
+    const result = applyGuard({ agent_type: 'scout', task_id: 'mqzhz574-b765' }, {}, [
+      { id: 'mqzhz574-b765', status: 'timeout' },
+    ])
     expect(result.task_id).toBeUndefined()
   })
 
@@ -147,17 +138,15 @@ describe('openpi-task-guard', () => {
       {},
       // History doesn't include this id — the model is resuming a
       // still-active task. Allow it through.
-      [],
+      []
     )
     expect(result.task_id).toBe('m1lxyz-a1b2')
   })
 
   it('keeps a well-formed task_id that is in the history as running', () => {
-    const result = applyGuard(
-      { agent_type: 'scout', task_id: 'm1lxyz-a1b2' },
-      {},
-      [{ id: 'm1lxyz-a1b2', status: 'running' }],
-    )
+    const result = applyGuard({ agent_type: 'scout', task_id: 'm1lxyz-a1b2' }, {}, [
+      { id: 'm1lxyz-a1b2', status: 'running' },
+    ])
     expect(result.task_id).toBe('m1lxyz-a1b2')
   })
 
@@ -166,11 +155,7 @@ describe('openpi-task-guard', () => {
     // other rules. The production code is best-effort (returns
     // empty set on parse error); we don't test the file I/O here,
     // just the contract that empty history is permissive.
-    const result = applyGuard(
-      { agent_type: 'scout', task_id: 'm1lxyz-a1b2' },
-      {},
-      [],
-    )
+    const result = applyGuard({ agent_type: 'scout', task_id: 'm1lxyz-a1b2' }, {}, [])
     expect(result.task_id).toBe('m1lxyz-a1b2')
   })
 
@@ -189,7 +174,7 @@ describe('openpi-task-guard', () => {
         conversation_id: 'research-ai',
         task_id: 'wrong-id-aaaa',
       },
-      { 'research-ai': { task_id: 'm1real-bbbb' } },
+      { 'research-ai': { task_id: 'm1real-bbbb' } }
     )
     expect(result.task_id).toBeUndefined()
     expect(result.conversation_id).toBe('research-ai')
@@ -202,7 +187,7 @@ describe('openpi-task-guard', () => {
         conversation_id: 'research-ai',
         task_id: 'm1real-bbbb',
       },
-      { 'research-ai': { task_id: 'm1real-bbbb' } },
+      { 'research-ai': { task_id: 'm1real-bbbb' } }
     )
     expect(result.task_id).toBe('m1real-bbbb')
   })
@@ -234,7 +219,7 @@ describe('openpi-task-guard', () => {
         task_id: 'mqzhz574-b765',
       },
       { 'research-ai': { task_id: 'other-cccc' } },
-      [{ id: 'mqzhz574-b765', status: 'cancelled' }],
+      [{ id: 'mqzhz574-b765', status: 'cancelled' }]
     )
     expect(result.task_id).toBeUndefined()
     expect(result.conversation_id).toBe('research-ai')

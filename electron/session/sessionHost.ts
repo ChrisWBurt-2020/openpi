@@ -127,7 +127,7 @@ export function applySessionValues(ready: SessionReady): void {
     threadCwdRegistry.register(ready.sessionId, { root: ready.cwd })
     threadCwdRegistry.setActive(ready.sessionId)
   }
-    sendToMainWindow(IPC.SESSION_READY, ready)
+  sendToMainWindow(IPC.SESSION_READY, ready)
 }
 
 export function clearSessionState(): void {
@@ -156,7 +156,7 @@ export function applySessionReady(ready: SessionReady, cwd: string): void {
     threadCwdRegistry.register(ready.sessionId, { root: ready.cwd })
     threadCwdRegistry.setActive(ready.sessionId)
   }
-    sendToMainWindow(IPC.SESSION_READY, ready)
+  sendToMainWindow(IPC.SESSION_READY, ready)
   _onRestartGitMonitoring?.(cwd)
 }
 

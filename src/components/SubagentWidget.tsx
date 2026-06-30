@@ -1,6 +1,6 @@
-import { For, Show, type Component } from 'solid-js'
-import { formatTaskDurationMs } from '../lib/taskToolHelpers'
+import { type Component, For, Show } from 'solid-js'
 import type { TrackedTask } from '../lib/extensionTrackers'
+import { formatTaskDurationMs } from '../lib/taskToolHelpers'
 
 /**
  * Live tasks tray — follows opencode-desktop v2 minimal style:
@@ -22,14 +22,18 @@ export function SubagentWidget(props: { tasks: TrackedTask[] }) {
         <div data-slot="subagent-list">
           <For each={active()}>
             {(task) => (
-              <div data-slot="subagent-item" data-status={task.status} data-bg={task.background || undefined}>
+              <div
+                data-slot="subagent-item"
+                data-status={task.status}
+                data-bg={task.background || undefined}
+              >
                 <Show
                   when={task.background}
-                  fallback={
-                    <span data-slot="subagent-item-mode">foreground</span>
-                  }
+                  fallback={<span data-slot="subagent-item-mode">foreground</span>}
                 >
-                  <span data-slot="subagent-item-mode" data-bg>background</span>
+                  <span data-slot="subagent-item-mode" data-bg>
+                    background
+                  </span>
                 </Show>
 
                 <span data-slot="subagent-item-agent">{task.agentType}</span>

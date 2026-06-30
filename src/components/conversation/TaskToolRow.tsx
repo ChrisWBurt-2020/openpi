@@ -1,12 +1,12 @@
-import { Show, createMemo, type Component } from 'solid-js'
-import type { ToolCard } from '../../types/session'
+import { type Component, createMemo, Show } from 'solid-js'
+import { labelForTool } from '../../lib/sessionView'
 import {
   isBackgroundHandoff,
   isValidPiTaskId,
   parseTaskDetails,
   type TaskToolDetails,
 } from '../../lib/taskToolHelpers'
-import { labelForTool } from '../../lib/sessionView'
+import type { ToolCard } from '../../types/session'
 import { SessionProgressDot } from './SessionProgressDot'
 
 type TaskToolRowProps = {
@@ -35,7 +35,8 @@ export const TaskToolRow: Component<TaskToolRowProps> = (props) => {
     return props.resolveTaskStatus?.(id) ?? null
   }
 
-  const handoff = () => isBackgroundHandoff(details(), props.card.output ?? '', props.card.streaming)
+  const handoff = () =>
+    isBackgroundHandoff(details(), props.card.output ?? '', props.card.streaming)
 
   const status = createMemo<'pending' | 'completed' | 'failed'>(() => {
     const artifact = artifactStatus()
@@ -87,9 +88,7 @@ export const TaskToolRow: Component<TaskToolRowProps> = (props) => {
       onClick={handleClick}
       onKeyDown={handleKeyDown}
     >
-      <Show when={progressStatus()}>
-        {(mode) => <SessionProgressDot status={mode()} />}
-      </Show>
+      <Show when={progressStatus()}>{(mode) => <SessionProgressDot status={mode()} />}</Show>
       <span class="tool-row-title">
         Task · {details().agent_type ?? 'agent'} · {title()}
       </span>
@@ -103,7 +102,9 @@ export const TaskToolRow: Component<TaskToolRowProps> = (props) => {
         {statusLabel()}
       </span>
       <Show when={canNavigate()}>
-        <span class="tool-chevron" aria-hidden="true">›</span>
+        <span class="tool-chevron" aria-hidden="true">
+          ›
+        </span>
       </Show>
     </div>
   )
