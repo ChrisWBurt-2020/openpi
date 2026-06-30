@@ -1,38 +1,39 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { readTasksFile } from '../electron/services/piTaskArtifacts'
+import { describe, expect, it, vi } from 'vitest'
+import { startArtifactWatcher } from '../electron/services/artifactWatcher'
+import { IPC } from '../src/lib/ipc/_full'
 
-describe('artifactWatcher inputs', () => {
-  it('readTasksFile returns empty when TASKS.md is missing', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openpi-art-'))
-    try {
-      expect(readTasksFile(dir).size).toBe(0)
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true })
-    }
-  })
+describe('artifactWatcher', () => {
+  it('emits TODO files', () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'openpi-artifacts-'))
+    const artifactsDir = path.join(cwd, '.pi', 'artifacts')
+    fs.mkdirSync(artifactsDir, { recursive: true })
+    fs.writeFileSync(path.join(artifactsDir, 'TODO.md'), '- [ ] open item\n- [x] done item\n')
+    const send = vi.fn()
+    const watcher = startArtifactWatcher({
+      getMainWindow: () =>
+        ({
+          isDestroyed: () => false,
+          webContents: { send },
+        }) as never,
+      getWorkspacePath: () => cwd,
+    })
+    watcher.stop()
 
-  it('readTasksFile parses pi-task TASKS.md blocks', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openpi-art-'))
-    try {
-      const tasksPath = path.join(dir, 'TASKS.md')
-      fs.writeFileSync(
-        tasksPath,
-        `### m1abc-x7f2
-status: active | updated: 2026-06-01T00:00:00.000Z
-
-#### Result
-
-pending
-`
-      )
-      const blocks = readTasksFile(dir)
-      expect(blocks.size).toBe(1)
-      expect(blocks.get('m1abc-x7f2')?.status).toBe('active')
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true })
-    }
+    expect(send).toHaveBeenCalledWith(
+      IPC.ARTIFACT_UPDATE,
+      expect.objectContaining({
+        artifacts: [],
+        todoFiles: [
+          expect.objectContaining({
+            source: 'TODO.md',
+            openCount: 1,
+          }),
+        ],
+      }),
+    )
+    fs.rmSync(cwd, { recursive: true, force: true })
   })
 })

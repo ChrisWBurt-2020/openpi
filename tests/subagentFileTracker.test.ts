@@ -12,7 +12,7 @@ function makeArtifact(overrides: Partial<SubagentArtifact> = {}): SubagentArtifa
     status: 'running',
     createdAt: 1000,
     completedAt: null,
-    filePath: '/tmp/.pi/artifacts/TASKS.md',
+    filePath: '/tmp/.pi/artifacts/legacy.json',
     ...overrides,
   }
 }
