@@ -41,6 +41,8 @@ export const resourcesApi = {
     ipcRenderer.invoke(IPC.UNARCHIVE_SESSIONS, { paths }),
   deleteSessions: (paths: string[]): Promise<DeleteSessionsResult> =>
     ipcRenderer.invoke(IPC.DELETE_SESSIONS, { paths }),
+  deleteSession: (filePath: string): Promise<DeleteSessionsResult> =>
+    ipcRenderer.invoke(IPC.DELETE_SESSION, { path: filePath }),
 
   listSkills: (): Promise<SkillItem[]> => ipcRenderer.invoke(IPC.LIST_SKILLS),
   readSkillFile: (filePath: string): Promise<string | null> =>

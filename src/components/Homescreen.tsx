@@ -3,7 +3,7 @@
  * Left: Projects (workspaces) + Settings/Help. Right: Search + Grouped sessions.
  */
 import fuzzysort from 'fuzzysort'
-import { FolderOpen, Search } from 'lucide-solid'
+import { FolderOpen, Search, Trash2 } from 'lucide-solid'
 import { createMemo, createSignal, For, Show } from 'solid-js'
 import type { SessionListItem, WorkspaceInfo } from '../lib/ipc'
 import { formatRelativeTime, groupSessions } from '../lib/sessionView'
@@ -16,6 +16,7 @@ interface Props {
   selectedWorkspacePath: string | null
   activeSessionPath: string | null
   onSelectSession: (path: string) => void
+  onDeleteSession: (path: string) => void
   onNewSession: () => void
   onOpenWorkspace: () => void
   onSelectWorkspace: (path: string) => void
@@ -159,21 +160,40 @@ export function Homescreen(props: Props) {
                           const isActive = session.path === props.activeSessionPath
                           const _wsName = session.cwd.split('/').pop() ?? ''
                           return (
-                            <button
-                              type="button"
+                            <div
+                              role="button"
+                              tabindex="0"
                               class={`homescreen-session${isActive ? ' is-active' : ''}`}
                               onClick={() => {
                                 if (!isActive) props.onSelectSession(session.path)
                                 props.onClose()
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
+                                  if (!isActive) props.onSelectSession(session.path)
+                                  props.onClose()
+                                }
                               }}
                             >
                               <span class="homescreen-session-title">
                                 {session.title || 'Untitled session'}
                               </span>
                               <span class="homescreen-session-meta">
+                                <button
+                                  type="button"
+                                  class="homescreen-session-delete"
+                                  aria-label={`Delete session ${session.title || 'Untitled session'}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    props.onDeleteSession(session.path)
+                                  }}
+                                >
+                                  <Trash2 size={12} strokeWidth={1.5} aria-hidden="true" />
+                                </button>
                                 {formatRelativeTime(session.updatedAt)}
                               </span>
-                            </button>
+                            </div>
                           )
                         }}
                       </For>

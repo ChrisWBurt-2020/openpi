@@ -1338,6 +1338,11 @@ export const deleteSessionsRequestSchema = z.object({
 })
 export type DeleteSessionsRequest = z.infer<typeof deleteSessionsRequestSchema>
 
+export const deleteSessionRequestSchema = z.object({
+  path: z.string().min(1),
+})
+export type DeleteSessionRequest = z.infer<typeof deleteSessionRequestSchema>
+
 export const deleteSessionsResultSchema = z.object({
   deleted: z.number(),
   failed: z.number(),

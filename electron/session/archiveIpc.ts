@@ -5,6 +5,7 @@ import type { ArchivedSessionItem, ArchiveSessionsResult, OutputLine } from '../
 import {
   archiveSessionsRequestSchema,
   deleteSessionsRequestSchema,
+  deleteSessionRequestSchema,
   IPC,
   unarchiveSessionsRequestSchema,
 } from '../../src/lib/ipc'
@@ -161,6 +162,38 @@ export function registerSessionArchiveIpc(deps: SessionArchiveIpcDeps): void {
           console.warn(`[delete-sessions] failed to trash ${filePath}: ${String(err)}`)
           failed++
         }
+      }
+      await deps.refreshSessionIndex()
+      return { deleted, failed }
+    }
+  )
+
+  deps.ipcMain.handle(
+    IPC.DELETE_SESSION,
+    async (_event, raw: unknown): Promise<{ deleted: number; failed: number }> => {
+      const { path: sessionPath } = deleteSessionRequestSchema.parse(raw)
+      const sessionsDir = path.resolve(deps.getAgentDir(), 'sessions')
+      let deleted = 0
+      let failed = 0
+
+      try {
+        const filePath = path.resolve(sessionPath)
+        if (!isPathInside(sessionsDir, filePath) || !fs.lstatSync(filePath).isFile()) {
+          failed++
+        } else if (filePath.endsWith('.jsonl.archived')) {
+          await shell.trashItem(filePath)
+          deleted++
+        } else if (filePath.endsWith('.jsonl')) {
+          const archivedPath = `${filePath}.archived`
+          fs.renameSync(filePath, archivedPath)
+          await shell.trashItem(archivedPath)
+          deleted++
+        } else {
+          failed++
+        }
+      } catch (err) {
+        console.warn(`[delete-session] failed to delete ${sessionPath}: ${String(err)}`)
+        failed++
       }
       await deps.refreshSessionIndex()
       return { deleted, failed }

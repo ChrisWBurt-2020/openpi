@@ -129,6 +129,7 @@ export const IPC = {
   LIST_ARCHIVED_SESSIONS: 'openpi:list-archived-sessions',
   UNARCHIVE_SESSIONS: 'openpi:unarchive-sessions',
   DELETE_SESSIONS: 'openpi:delete-sessions',
+  DELETE_SESSION: 'openpi:delete-session',
   LIST_SKILLS: 'openpi:list-skills',
   READ_SKILL_FILE: 'openpi:read-skill-file',
   LIST_DIRECTORY: 'openpi:list-directory',

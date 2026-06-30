@@ -100,6 +100,16 @@ export default function App() {
     send: (prefix) => void session.send(prefix),
   })
   const [gitPanelTab, setGitPanelTab] = createSignal<'changes'>('changes')
+
+  // ── Homescreen delete ──────────────────────────────────────────────────────
+  // Move the session file to the OS trash. For active .jsonl files the IPC
+  // handler archives first, then trashes.
+  const handleDeleteSession = async (sessionPath: string) => {
+    const result = await window.openpi.deleteSession(sessionPath)
+    if (result.failed > 0) {
+      console.warn(`[delete-session] failed to delete ${sessionPath}`)
+    }
+  }
   // ── Git panel → TopBar bridge ──────────────────────────────────────────────
   // The active GitPanel surfaces its branch/upstream labels here so TopBar can
   // display them as clickable chips, and provides a toggleRefs callback so
@@ -342,6 +352,7 @@ export default function App() {
                   onNewSession={() => void session.createNewSession()}
                   onSelectWorkspace={(path: string) => void session.selectWorkspace(path)}
                   onOpenWorkspace={() => void session.openWorkspace()}
+                  onDeleteSession={(path: string) => void handleDeleteSession(path)}
                   onClose={() => setHomescreenOpen(false)}
                 />
               </Show>

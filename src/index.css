@@ -2294,10 +2294,38 @@ input::placeholder {
 }
 
 .homescreen-session-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
   color: var(--mute);
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+.homescreen-session-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--mute);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.homescreen-session:hover .homescreen-session-delete,
+.homescreen-session-delete:focus-visible {
+  opacity: 1;
+}
+
+.homescreen-session-delete:hover {
+  background: var(--surface-2);
+  color: var(--danger, #d04444);
 }
 
 .homescreen-group {
@@ -5271,7 +5299,8 @@ body.panel-dragging {
   font-size: 0; /* SVG + label only */
 }
 .ctx-usage-btn:hover {
-  background: var(--surface-soft);
+  background: var(--surface-card);
+  color: var(--ink-soft);
 }
 /* green (default) → amber → red */
 .ctx-usage-btn.is-medium {
