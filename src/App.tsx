@@ -18,6 +18,7 @@ import { TopBar } from './components/TopBar'
 import { TerminalPanel } from './components/terminal/TerminalPanel'
 import { Welcome } from './components/Welcome'
 import { AppOverlays } from './components/workbench/AppOverlays'
+import { ConfirmDialog } from './components/ConfirmDialog'
 import { ConversationWorkspace } from './components/workbench/ConversationWorkspace'
 import { GitSidePanel } from './components/workbench/GitSidePanel'
 import { RightPanel } from './components/workbench/RightPanel'
@@ -102,12 +103,24 @@ export default function App() {
   const [gitPanelTab, setGitPanelTab] = createSignal<'changes'>('changes')
 
   // ── Homescreen delete ──────────────────────────────────────────────────────
-  // Move the session file to the OS trash. For active .jsonl files the IPC
-  // handler archives first, then trashes.
-  const handleDeleteSession = async (sessionPath: string) => {
-    const result = await window.openpi.deleteSession(sessionPath)
+  // Two-step: clicking delete opens a confirm modal with the session title.
+  // Confirming moves the session file to the OS trash via the IPC handler.
+  // For active .jsonl files the IPC archives first, then trashes.
+  const [pendingDelete, setPendingDelete] = createSignal<{ path: string; title: string } | null>(null)
+  const requestDeleteSession = (sessionPath: string) => {
+    const target = session.sessions.find((s) => s.path === sessionPath)
+    setPendingDelete({
+      path: sessionPath,
+      title: target?.title || 'Untitled session',
+    })
+  }
+  const confirmDeleteSession = async () => {
+    const target = pendingDelete()
+    if (!target) return
+    setPendingDelete(null)
+    const result = await window.openpi.deleteSession(target.path)
     if (result.failed > 0) {
-      console.warn(`[delete-session] failed to delete ${sessionPath}`)
+      console.warn(`[delete-session] failed to delete ${target.path}`)
     }
   }
   // ── Git panel → TopBar bridge ──────────────────────────────────────────────
@@ -352,7 +365,7 @@ export default function App() {
                   onNewSession={() => void session.createNewSession()}
                   onSelectWorkspace={(path: string) => void session.selectWorkspace(path)}
                   onOpenWorkspace={() => void session.openWorkspace()}
-                  onDeleteSession={(path: string) => void handleDeleteSession(path)}
+                  onDeleteSession={requestDeleteSession}
                   onClose={() => setHomescreenOpen(false)}
                 />
               </Show>
@@ -513,6 +526,14 @@ export default function App() {
               }}
             />
             <ExtensionUiOverlay />
+            <ConfirmDialog
+              open={pendingDelete() !== null}
+              title="Delete session?"
+              message={`This will move "${pendingDelete()?.title ?? ''}" to the OS trash. You can restore it from there if needed.`}
+              confirmLabel="Delete"
+              onConfirm={() => void confirmDeleteSession()}
+              onCancel={() => setPendingDelete(null)}
+            />
           </div>
         )
       }}

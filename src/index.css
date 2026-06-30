@@ -16874,3 +16874,13 @@ body.panel-dragging {
   margin-left: 2px;
 }
 
+
+.confirm-dialog-danger {
+  background: var(--danger, #d04444);
+  color: #fff;
+  border: 1px solid var(--danger, #d04444);
+}
+.confirm-dialog-danger:hover {
+  background: var(--danger-hover, #b83838);
+  border-color: var(--danger-hover, #b83838);
+}
