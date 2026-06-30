@@ -1,46 +1,52 @@
-import { Check, Circle, Loader2, X } from 'lucide-solid'
-import { For, Show } from 'solid-js'
+import { For, Show, type Component } from 'solid-js'
+import { formatTaskDurationMs } from '../lib/taskToolHelpers'
 import type { TrackedTask } from '../lib/extensionTrackers'
 
-interface SubagentWidgetProps {
-  tasks: TrackedTask[]
-}
-
-function statusIcon(status: TrackedTask['status']) {
-  switch (status) {
-    case 'running':
-    case 'queued':
-      return <Loader2 size={12} class="subagent-spin" />
-    case 'completed':
-      return <Check size={12} />
-    case 'failed':
-      return <X size={12} />
-    default: {
-      const _exhaustive: never = status
-      return <Circle size={12} />
-    }
-  }
-}
-
-export function SubagentWidget(props: SubagentWidgetProps) {
+/**
+ * Live tasks tray — follows opencode-desktop v2 minimal style:
+ * - No chrome (no card, no border) — sits inline in the conversation
+ * - Trigger-level: `agent · elapsed · description`
+ * - Compact single line per task, monospace ids
+ */
+export function SubagentWidget(props: { tasks: TrackedTask[] }) {
   const active = () => props.tasks.filter((t) => t.status === 'running' || t.status === 'queued')
 
   return (
     <Show when={active().length > 0}>
-      <div class="subagent-widget">
-        <div class="subagent-widget-header">
-          <span class="subagent-widget-title">Tasks (pi-task)</span>
-          <span class="subagent-widget-count">{active().length}</span>
+      <div data-component="subagent-widget" data-pending>
+        <div data-slot="subagent-header">
+          <span data-slot="subagent-title">Tasks</span>
+          <span data-slot="subagent-count">{active().length}</span>
         </div>
-        <div class="subagent-list">
+
+        <div data-slot="subagent-list">
           <For each={active()}>
             {(task) => (
-              <div class={`subagent-item subagent-item--${task.status}`}>
-                <span class="subagent-item-icon">{statusIcon(task.status)}</span>
-                <span class="subagent-item-type">{task.agentType}</span>
-                <span class="subagent-item-desc">{task.description}</span>
+              <div data-slot="subagent-item" data-status={task.status} data-bg={task.background || undefined}>
+                <Show
+                  when={task.background}
+                  fallback={
+                    <span data-slot="subagent-item-mode">foreground</span>
+                  }
+                >
+                  <span data-slot="subagent-item-mode" data-bg>background</span>
+                </Show>
+
+                <span data-slot="subagent-item-agent">{task.agentType}</span>
+
+                <span data-slot="subagent-item-elapsed">
+                  {formatTaskDurationMs(Date.now() - task.startedAt)}
+                </span>
+
+                <Show when={task.description}>
+                  <span data-slot="subagent-item-sep">·</span>
+                  <span data-slot="subagent-item-desc" title={task.description}>
+                    {task.description}
+                  </span>
+                </Show>
+
                 <Show when={task.taskId}>
-                  <span class="subagent-item-id">{task.taskId}</span>
+                  <span data-slot="subagent-item-id">{task.taskId}</span>
                 </Show>
               </div>
             )}

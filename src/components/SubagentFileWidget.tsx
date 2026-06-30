@@ -1,10 +1,10 @@
 /**
- * Task tray — running `task` delegations from `@heyhuynhgiabuu/pi-task`.
- * State is read from `.pi/artifacts/TASKS.md` (### <task-id> blocks).
+ * Legacy file-backed task tray.
+ * Current pi-task state comes from JSON history and sub-session JSONL.
  */
 
-import { CheckCircle2, Circle, CircleAlert, Loader2, Square, SquareCheck, X } from 'lucide-solid'
-import { createMemo, createSignal, For, type JSX, Show } from 'solid-js'
+import { CheckCircle2, Circle, CircleAlert, Loader2, Square, X } from 'lucide-solid'
+import { createEffect, createMemo, createSignal, For, type JSX, Show } from 'solid-js'
 import type { SubagentArtifact, TodoListFile } from '../lib/ipc/_full'
 
 interface SubagentFileWidgetProps {
@@ -27,6 +27,18 @@ const STATUS_COLOR: Record<SubagentArtifact['status'], string> = {
 export function SubagentFileWidget(props: SubagentFileWidgetProps) {
   const [expandedIds, setExpandedIds] = createSignal<Set<string>>(new Set())
   const [dismissed, setDismissed] = createSignal(false)
+  let lastRunningKey = ''
+
+  createEffect(() => {
+    const key = props.artifacts
+      .filter((a) => a.status === 'running')
+      .map((a) => a.id)
+      .join('|')
+    if (key && key !== lastRunningKey) {
+      setDismissed(false)
+    }
+    lastRunningKey = key
+  })
 
   const visible = createMemo(() => {
     if (dismissed()) return []
@@ -44,7 +56,7 @@ export function SubagentFileWidget(props: SubagentFileWidgetProps) {
 
   const handleDismiss = () => {
     setDismissed(true)
-    props.onDismiss?.()
+    // Do not clear tracker state — watcher will keep repopulating
   }
 
   return (
@@ -128,7 +140,10 @@ export function SubagentFileTray(props: SubagentFileTrayProps) {
 }
 
 export function TodoListTray(props: TodoListTrayProps) {
-  const activeFile = createMemo(() => props.todoFiles[0])
+  const activeFile = createMemo(() =>
+    props.todoFiles.find((file) => file.items.some((item) => !item.checked)),
+  )
+  const openItems = createMemo(() => activeFile()?.items.filter((item) => !item.checked) ?? [])
 
   return (
     <Show when={activeFile()}>
@@ -139,12 +154,10 @@ export function TodoListTray(props: TodoListTrayProps) {
           </div>
           <div class="todo-list-tray__source">
             <ul class="todo-list-tray__items">
-              <For each={file().items}>
+              <For each={openItems()}>
                 {(item) => (
-                  <li
-                    class={`todo-list-tray__item${item.checked ? ' todo-list-tray__item--done' : ''}`}
-                  >
-                    {item.checked ? <SquareCheck size={13} /> : <Square size={13} />}
+                  <li class="todo-list-tray__item">
+                    <Square size={13} />
                     <span>{item.text}</span>
                   </li>
                 )}
