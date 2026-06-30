@@ -28,8 +28,21 @@ function escapeHtml(value: string): string {
 
 function sanitizeMarkdownHtml(html: string): string {
   return DOMPurify.sanitize(html, {
-    ADD_TAGS: ['button', 'input'],
-    ADD_ATTR: ['class', 'type', 'checked', 'disabled', 'aria-label', 'aria-pressed', 'data-ln'],
+    ADD_TAGS: ['button', 'input', 'file_comment', 'selected_code', 'comment'],
+    ADD_ATTR: [
+      'class',
+      'type',
+      'checked',
+      'disabled',
+      'aria-label',
+      'aria-pressed',
+      'data-ln',
+      'path',
+      'line',
+      'startline',
+      'endline',
+      'side',
+    ],
   })
 }
 
