@@ -36,7 +36,7 @@ export const ShellToolRow: Component<ShellToolRowProps> = (props) => {
         
         style={{ cursor: hasOutput() ? 'pointer' : 'default' }}
       >
-        <span class="tool-ran-label">{labelForTool(props.card.toolName)}</span>
+        <span class="tool-ran-label" style={props.card.streaming ? 'animation: tool-name-shimmer 1.4s ease-in-out infinite' : ''}>{labelForTool(props.card.toolName)}</span>
         <code class="tool-ran-cmd">{displayCmd()}</code>
         <Show when={hasOutput() && !props.card.streaming}>
           <span class="tool-chevron" data-open={open()} aria-hidden="true">

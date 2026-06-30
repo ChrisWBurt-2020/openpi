@@ -26,7 +26,7 @@ export const FileToolRow: Component<FileToolRowProps> = (props) => {
         onClick={() => hasExpandable() && setOpen((v) => !v)}
         style={{ cursor: hasExpandable() ? 'pointer' : 'default' }}
       >
-        <span class="tool-ran-label">{labelForTool(props.card.toolName)}</span>
+        <span class="tool-ran-label" style={props.card.streaming ? 'animation: tool-name-shimmer 1.4s ease-in-out infinite' : ''}>{labelForTool(props.card.toolName)}</span>
         <span class="tool-file-chip">
           <FileIcon name={basename()} size={13} />
           <span

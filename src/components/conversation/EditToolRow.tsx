@@ -67,7 +67,7 @@ export const EditToolRow: Component<EditToolRowProps> = (props) => {
         }}
         style={{ cursor: 'pointer' }}
       >
-        <span class="tool-ran-label">{labelForTool(props.card.toolName)}</span>
+        <span class="tool-ran-label" style={props.card.streaming ? 'animation: tool-name-shimmer 1.4s ease-in-out infinite' : ''}>{labelForTool(props.card.toolName)}</span>
         <span class="tool-file-chip">
           <FileIcon name={basename()} size={13} />
           <span
