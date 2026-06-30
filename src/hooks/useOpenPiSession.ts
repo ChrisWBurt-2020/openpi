@@ -13,7 +13,7 @@
  * `session.ready` (same as before) while still getting fine-grained reactivity
  * tracking when accessed from JSX or createEffect.
  */
-import { batch, createEffect, createSignal, on, onCleanup, onMount } from 'solid-js'
+import { batch, createEffect, createMemo, createSignal, on, onCleanup, onMount } from 'solid-js'
 import type {
   BashExecutionResult,
   ModelInfo,
@@ -28,6 +28,29 @@ import { buildSessionPromptPayload, buildSessionPromptText } from '../lib/sessio
 import type { Message } from '../types/session'
 import { useAgentRunMetrics } from './useAgentRunMetrics'
 import { useExtensionTrackers } from './useExtensionTrackers'
+import { isSubSessionPath } from '../lib/subSessionNavigation'
+import {
+  findTaskIdForToolCall,
+  resolveTaskStatusFromHistory,
+  type TaskHistoryEntry,
+} from '../lib/taskHistory'
+import { isValidPiTaskId } from '../lib/taskToolHelpers'
+import type { ToolCard } from '../types/session'
+
+function taskHistorySignature(entries: TaskHistoryEntry[]): string {
+  return entries
+    .map((entry) => `${entry.id}:${entry.status ?? ''}:${entry.startedAt ?? ''}`)
+    .join('|')
+}
+
+/** A snapshot of the session we navigated away from, used to power "Back to parent". */
+interface ParentStackEntry {
+  path: string
+  name: string | null
+  cwd: string
+}
+
+export { isSubSessionPath }
 import { useRemoteSessionSync } from './useRemoteSessionSync'
 import { useSessionHistory } from './useSessionHistory'
 import { useSessionIndex } from './useSessionIndex'
@@ -47,6 +70,12 @@ export function useOpenPiSession() {
   const [models, setModels] = createSignal<ModelInfo[]>([])
   const [error, setError] = createSignal<string | null>(null)
   const [queueMode, setQueueMode] = createSignal<QueueMode>('prompt')
+  const [parentStack, setParentStack] = createSignal<Array<ParentStackEntry>>([])
+  const [taskHistory, setTaskHistory] = createSignal<TaskHistoryEntry[]>([])
+  const isSubSession = createMemo<boolean>(() => {
+    const file = ready()?.sessionFile
+    return typeof file === 'string' && file.includes('/.pi/artifacts/sessions/')
+  })
   // Tracks whether the user just sent a fresh prompt (not a steer/followup).
   // Used to limit auto-steer activation to explicit user-initiated prompts only,
   // so intermediate agent_start events (e.g. after steer delivery) don't override
@@ -175,6 +204,51 @@ export function useOpenPiSession() {
     })
   )
 
+  // ── Load task-session-history whenever cwd changes ───────────────────────
+  // pi-task writes `.pi/task-session-history.json` at task start; it is the
+  // most reliable source for linking a parent `task` tool card to its child
+  // sub-session (the tracker's `taskId` is populated from `tool_execution_end`
+  // details, which pi-task does not always emit). Keep polling while the cwd is
+  // active because `.pi/task-session-history.json` is outside the artifact
+  // watcher, so no live event fires when the task id lands.
+  createEffect(
+    on(ready, (r) => {
+      const cwd = r?.cwd
+      let disposed = false
+      let signature = ''
+
+      const refresh = async () => {
+        if (!cwd || disposed) return
+        try {
+          const entries = (await window.openpi.readTaskSessionHistory({ cwd })) as TaskHistoryEntry[]
+          if (disposed) return
+          const nextSignature = taskHistorySignature(entries)
+          if (nextSignature !== signature) {
+            signature = nextSignature
+            setTaskHistory(entries)
+          }
+        } catch {
+          if (!disposed) setTaskHistory([])
+        }
+      }
+
+      if (!cwd) {
+        setTaskHistory([])
+        return
+      }
+
+      void refresh()
+      const timer = window.setInterval(() => {
+        void refresh()
+      }, 1000)
+
+      onCleanup(() => {
+        disposed = true
+        window.clearInterval(timer)
+      })
+    })
+  )
+
   // ── Re-fetch session index when filter options change ─────────────────────
   createEffect(
     on(
@@ -289,7 +363,53 @@ export function useOpenPiSession() {
 
   const openExistingSession = async (session: SessionListItem) => {
     setError(null)
+    setParentStack([])
     await window.openpi.openSession({ path: session.path })
+  }
+
+  /**
+   * Navigate to the sub-session that pi-task created for `taskId`.
+   *
+   * Resolves the JSONL file at `<cwd>/.pi/artifacts/sessions/<taskId>/`,
+   * pushes the current session onto the parent stack, and opens the sub-session
+   * via the standard `openSession` IPC (which does a full session replace —
+   * the same path used by the sidebar, so the pi-task runner is replaced cleanly).
+   *
+   * Returns `false` when the exact sub-session file cannot be resolved
+   * (e.g. the task id has not landed in history yet, or the sub-session
+   * was deleted). Do not fall back to the most recent sub-session: fast
+   * first-clicks would open stale/old task sessions.
+   */
+  const openSubSession = async (taskId: string | null): Promise<boolean> => {
+    const current = ready()
+    const cwd = current?.cwd
+    if (!cwd || !taskId) return false
+    const path = await window.openpi.resolveSubSessionPath({ cwd, taskId })
+    if (!path) return false
+    const stack = parentStack()
+    const currentPath = current.sessionFile
+    if (currentPath && (stack.length === 0 || stack[stack.length - 1]?.path !== currentPath)) {
+      setParentStack([
+        ...stack,
+        { path: currentPath, name: current.sessionName ?? null, cwd },
+      ])
+    }
+    setError(null)
+    await window.openpi.openSession({ path })
+    return true
+  }
+
+  /**
+   * Pop the most recent parent off the stack and open it. No-op when the
+   * stack is empty.
+   */
+  const popToParent = async (): Promise<void> => {
+    const stack = parentStack()
+    const target = stack[stack.length - 1]
+    if (!target) return
+    setParentStack(stack.slice(0, -1))
+    setError(null)
+    await window.openpi.openSession({ path: target.path })
   }
 
   const createNewSession = async (mode?: 'local' | 'worktree', baseBranch?: string) => {
@@ -568,6 +688,50 @@ export function useOpenPiSession() {
       return trackers.taskNotification()
     },
     dismissTaskNotification: () => trackers.dismissTaskNotification(),
+
+    /**
+     * Resolve the pi-task short id for a `task` tool card.
+     *
+     * Lookup chain (first hit wins):
+     *  1. `TaskTracker.tasks[]` keyed by `card.toolCallId` — the tracker
+     *     is populated from the tool's *result* `details.task_id` when
+     *     the call ends.
+     *  2. `card.details.task_id` (the structured result field) — this is
+     *     a defensive backup; pi-task does not always emit it in the
+     *     `tool_execution_end` event.
+     *  3. `task-session-history.json` — pi-task writes this at task
+     *     start with `{id, agentType, description, startedAt}`. We match
+     *     by `agentType` + `description` + closest `startedAt`. This
+     *     works for both running (history is written on start) and
+     *     completed tasks.
+     *
+     * Returns `null` when no source has a resolvable id. Caller is
+     * expected to render a non-interactive status line in that case.
+     */
+    resolveTaskIdForCard: (card: ToolCard): string | null => {
+      // 1. Tracker
+      const fromTracker = trackers
+        .tasks()
+        .find((t) => t.tempId === card.toolCallId)?.taskId
+      if (typeof fromTracker === 'string' && isValidPiTaskId(fromTracker)) {
+        return fromTracker
+      }
+      // 2. card.details.task_id
+      const fromDetails =
+        card.details && typeof card.details === 'object'
+          ? (card.details as Record<string, unknown>).task_id
+          : undefined
+      if (typeof fromDetails === 'string' && isValidPiTaskId(fromDetails)) {
+        return fromDetails
+      }
+      // 3. History lookup
+      const args = (card.args ?? {}) as Record<string, unknown>
+      const agentType = typeof args.agent_type === 'string' ? args.agent_type : null
+      const description = typeof args.description === 'string' ? args.description : null
+      return findTaskIdForToolCall(taskHistory(), agentType, description, card.startedAt)
+    },
+    resolveTaskStatusForTaskId: (taskId: string | null): 'running' | 'done' | 'error' | null =>
+      resolveTaskStatusFromHistory(taskHistory(), taskId),
     get artifacts() {
       return subagentFiles.artifacts()
     },
@@ -596,6 +760,8 @@ export function useOpenPiSession() {
     // Actions
     openWorkspace,
     openExistingSession,
+    openSubSession,
+    popToParent,
     createNewSession,
     selectWorkspace: sessionIndex.selectWorkspace,
     loadWorkspacePreview: sessionIndex.loadWorkspacePreview,
@@ -616,5 +782,9 @@ export function useOpenPiSession() {
     clearTasks: () => {
       trackers.clearAll()
     },
+
+    // Sub-session navigation
+    parentStack,
+    isSubSession,
   }
 }
