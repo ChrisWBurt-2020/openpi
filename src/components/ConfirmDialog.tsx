@@ -14,26 +14,32 @@ export function ConfirmDialog(props: Props) {
   return (
     <Show when={props.open}>
       <div
-        class="extension-ui-overlay ask-overlay"
+        class="confirm-dialog-backdrop"
         role="presentation"
         onClick={(e) => {
           if (e.target === e.currentTarget) props.onCancel()
         }}
       >
-        <div class="ask-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
-          <div class="ask-modal-header">
-            <span id="confirm-dialog-title" class="ask-modal-title">
+        <div
+          class="confirm-dialog"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="confirm-dialog-title"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div class="confirm-dialog-header">
+            <span id="confirm-dialog-title" class="confirm-dialog-title">
               {props.title}
             </span>
           </div>
-          <p class="ask-modal-body">{props.message}</p>
-          <div class="ask-modal-footer">
-            <button type="button" class="ask-btn ask-btn-ghost" onClick={props.onCancel}>
+          <p class="confirm-dialog-body">{props.message}</p>
+          <div class="confirm-dialog-footer">
+            <button type="button" class="confirm-dialog-btn confirm-dialog-btn-ghost" onClick={props.onCancel}>
               {props.cancelLabel ?? 'Cancel'}
             </button>
             <button
               type="button"
-              class="ask-btn confirm-dialog-danger"
+              class="confirm-dialog-btn confirm-dialog-btn-danger"
               onClick={props.onConfirm}
             >
               {props.confirmLabel ?? 'Delete'}
