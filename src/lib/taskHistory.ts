@@ -77,5 +77,12 @@ export function findTaskIdForToolCall(
     }
   }
   if (best && best.delta <= MAX_TIME_DELTA_MS) return best.entry.id
-  return null
+  // No candidate within the time window. When matching by agentType only
+  // (description is null), fall back to the most recent matching entry so
+  // a stale click still navigates somewhere sensible. When description was
+  // provided as an exact match, a single stale hit is probably wrong - bail.
+  if (description !== null && description !== undefined) return null
+  if (candidates.length === 0) return null
+  const sorted = [...candidates].sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))
+  return sorted[0]?.id ?? null
 }
