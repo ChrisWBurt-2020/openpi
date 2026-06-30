@@ -90,6 +90,12 @@ export function getWorkbenchContext(): WorkbenchContext {
  *
  * Returns null when no context is available (avoid injecting boilerplate).
  */
+// Skip virtual URLs (e.g. openpi-diff://review) — only real filesystem paths are useful as "Viewing file" hints.
+const LOCAL_PATH = /^([a-zA-Z]:[\\/]|\/)/
+export function isLocalFilePath(path: string): boolean {
+  return LOCAL_PATH.test(path)
+}
+
 export function buildWorkbenchContextPrefix(): string | null {
   const parts: string[] = []
 
@@ -97,7 +103,7 @@ export function buildWorkbenchContextPrefix(): string | null {
     parts.push(`Workspace: ${context.cwd}`)
   }
 
-  if (context.visibleFile) {
+  if (context.visibleFile && isLocalFilePath(context.visibleFile)) {
     const abs = context.visibleFileAbs ? ` (${context.visibleFileAbs})` : ''
     parts.push(`Viewing file: ${context.visibleFile}${abs}`)
   }
