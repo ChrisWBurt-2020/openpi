@@ -38,6 +38,14 @@ describe('file line comments', () => {
     expect(formatFileLineCommentPrompt(comment)).toContain(comment.comment)
   })
 
+  it('always emits startLine and endLine (no `line="N"` shortcut)', () => {
+    const single: FileLineComment = { ...comment, id: 'single', startLine: 7, endLine: 7 }
+    const formatted = formatFileLineCommentPrompt(single)
+    expect(formatted).toContain('startLine="7"')
+    expect(formatted).toContain('endLine="7"')
+    expect(formatted).not.toMatch(/\bline="7"/)
+  })
+
   it('omits the side attribute for file comments', () => {
     expect(formatFileLineCommentPrompt(comment)).not.toContain('side=')
   })
@@ -60,5 +68,19 @@ describe('file line comments', () => {
     expect(formatFileLineCommentsPrompt([comment])).toContain(
       'Use these file-specific line comments as context for the next response'
     )
+  })
+
+  it('LLM-bound batch prompt preserves the line number for every comment', () => {
+    // Regression: earlier `DOMPurify` pass stripped the custom tags, so the LLM got only the
+    // comment body without LOC. The renderer-side fix in `MarkdownContent` preserves the tags,
+    // and the batch prompt must always include startLine/endLine so the LLM has the location.
+    const a: FileLineComment = { ...comment, id: 'a', startLine: 10, endLine: 12 }
+    const b: FileLineComment = { ...comment, id: 'b', startLine: 4268, endLine: 4268 }
+    const formatted = formatFileLineCommentsPrompt([a, b])
+    expect(formatted).toContain('startLine="10"')
+    expect(formatted).toContain('endLine="12"')
+    expect(formatted).toContain('startLine="4268"')
+    expect(formatted).toContain('endLine="4268"')
+    expect(formatted).not.toMatch(/\bline="(10|12|4268)"/)
   })
 })

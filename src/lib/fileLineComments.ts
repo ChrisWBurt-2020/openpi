@@ -30,16 +30,13 @@ export function formatFileLineCommentSideLabel(side: FileLineCommentSide): strin
 }
 
 export function formatFileLineCommentPrompt(comment: FileLineComment): string {
-  const lineAttr =
-    comment.startLine === comment.endLine
-      ? `line="${comment.startLine}"`
-      : `startLine="${comment.startLine}" endLine="${comment.endLine}"`
+  const lineAttr = ` startLine="${comment.startLine}" endLine="${comment.endLine ?? comment.startLine}"`
   const sideAttr =
     comment.source === 'review' && comment.side !== 'current'
       ? ` side="${formatFileLineCommentSideLabel(comment.side)}"`
       : ''
   return [
-    `<file_comment path="${comment.path}"${sideAttr} ${lineAttr}>`,
+    `<file_comment path="${comment.path}"${sideAttr}${lineAttr}>`,
     `<selected_code>`,
     comment.snippet,
     `</selected_code>`,
