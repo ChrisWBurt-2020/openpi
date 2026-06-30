@@ -173,6 +173,9 @@ export function Homescreen(props: Props) {
                                   e.preventDefault()
                                   if (!isActive) props.onSelectSession(session.path)
                                   props.onClose()
+                                } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                                  e.preventDefault()
+                                  props.onDeleteSession(session.path)
                                 }
                               }}
                             >
