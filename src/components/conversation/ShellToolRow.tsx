@@ -3,7 +3,6 @@ import type { DisplayPreferences } from '../../lib/displayPreferences'
 import { labelForTool } from '../../lib/sessionView'
 import type { ToolCard } from '../../types/session'
 import { extractCommand, MAX_CMD } from './toolCardHelpers'
-import { SessionProgressDot } from './SessionProgressDot'
 
 type ShellToolRowProps = {
   card: ToolCard
@@ -27,7 +26,7 @@ export const ShellToolRow: Component<ShellToolRowProps> = (props) => {
     <div class={`tool-row${props.card.isError ? ' is-error' : ''}`}>
       <button
         type="button"
-        class="tool-ran-header"
+        class={`tool-ran-header${props.card.streaming ? ' tool-ran-streaming' : ''}`}
         onClick={() => {
           if (hasOutput()) {
             setManualToggle(true)
@@ -37,9 +36,6 @@ export const ShellToolRow: Component<ShellToolRowProps> = (props) => {
         
         style={{ cursor: hasOutput() ? 'pointer' : 'default' }}
       >
-        <Show when={props.card.streaming}>
-          <SessionProgressDot status="running" />
-        </Show>
         <span class="tool-ran-label">{labelForTool(props.card.toolName)}</span>
         <code class="tool-ran-cmd">{displayCmd()}</code>
         <Show when={hasOutput() && !props.card.streaming}>

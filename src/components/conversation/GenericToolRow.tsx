@@ -2,7 +2,6 @@ import { type Component, createSignal, Show } from 'solid-js'
 import { labelForTool } from '../../lib/sessionView'
 import type { ToolCard } from '../../types/session'
 import { extractCommand, MAX_CMD } from './toolCardHelpers'
-import { SessionProgressDot } from './SessionProgressDot'
 
 type GenericToolRowProps = {
   card: ToolCard
@@ -19,18 +18,13 @@ export const GenericToolRow: Component<GenericToolRowProps> = (props) => {
     <div class={`tool-row${props.card.isError ? ' is-error' : ''}`}>
       <button
         type="button"
-        class="tool-ran-header"
+        class={`tool-ran-header${props.card.streaming ? ' tool-ran-streaming' : ''}`}
         onClick={() => hasOutput() && setOpen((v) => !v)}
         style={{ cursor: hasOutput() ? 'pointer' : 'default' }}
       >
-        <Show when={props.card.streaming}>
-          <SessionProgressDot status="running" />
-        </Show>
         <span class="tool-ran-label">{labelForTool(props.card.toolName)}</span>
         <span class="tool-ran-preview">{displayPreview()}</span>
-        <Show when={props.card.streaming}>
-          <SessionProgressDot status="running" />
-        </Show>
+        
         <Show when={hasOutput() && !props.card.streaming}>
           <span class="tool-chevron" data-open={open()} aria-hidden="true">
             {open() ? '⌄' : '›'}

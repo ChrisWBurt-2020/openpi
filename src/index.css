@@ -4250,16 +4250,41 @@ body.panel-dragging {
 .progress-cell {
   fill: var(--ink) !important;
   opacity: 0.6 !important;
-  animation: progress-cell-pulse 4.5s ease-in-out infinite !important;
+  animation: session-progress-pulse 4.5s ease-in-out infinite !important;
 }
 
-@keyframes progress-cell-pulse {
+@property --progress-hi { syntax: "<number>"; inherits: false; initial-value: 1; }
+@property --progress-lo { syntax: "<number>"; inherits: false; initial-value: 0.15; }
+
+/* Text shimmer for streaming tool name (non-task tool rows) */
+.tool-ran-streaming .tool-ran-label {
+  background-image: linear-gradient(
+    90deg,
+    var(--ash) 0%,
+    var(--ink) 30%,
+    var(--ink) 50%,
+    var(--ink) 70%,
+    var(--ash) 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: tool-name-shimmer 2s linear infinite;
+}
+
+@keyframes tool-name-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+@keyframes session-progress-pulse {
   0%,
   100% {
-    opacity: 0.6 !important;
+    opacity: var(--progress-hi, 1);
   }
   50% {
-    opacity: 1 !important;
+    opacity: var(--progress-lo, 0.15);
   }
 }
 

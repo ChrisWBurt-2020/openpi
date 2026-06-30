@@ -4,7 +4,6 @@ import { FileIcon } from '../../lib/fileIcons'
 import { labelForTool } from '../../lib/sessionView'
 import type { ToolCard } from '../../types/session'
 import { extractFilePath, isImagePath, localFileUrl } from './toolCardHelpers'
-import { SessionProgressDot } from './SessionProgressDot'
 
 type FileToolRowProps = {
   card: ToolCard
@@ -23,7 +22,7 @@ export const FileToolRow: Component<FileToolRowProps> = (props) => {
     <div class={`tool-row${props.card.isError ? ' is-error' : ''}`}>
       <button
         type="button"
-        class="tool-ran-header"
+        class={`tool-ran-header${props.card.streaming ? ' tool-ran-streaming' : ''}`}
         onClick={() => hasExpandable() && setOpen((v) => !v)}
         style={{ cursor: hasExpandable() ? 'pointer' : 'default' }}
       >
@@ -41,9 +40,6 @@ export const FileToolRow: Component<FileToolRowProps> = (props) => {
             {filePath()}
           </span>
         </span>
-        <Show when={props.card.streaming}>
-          <SessionProgressDot status="running" />
-        </Show>
         <Show when={hasExpandable() && !props.card.streaming}>
           <span class="tool-chevron" data-open={open()} aria-hidden="true">
             {open() ? '⌄' : '›'}

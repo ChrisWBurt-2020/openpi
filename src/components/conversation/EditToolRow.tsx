@@ -5,7 +5,6 @@ import { FileIcon } from '../../lib/fileIcons'
 import { labelForTool } from '../../lib/sessionView'
 import type { ToolCard } from '../../types/session'
 import { extractEditPairs, extractFilePath, extractWriteLines } from './toolCardHelpers'
-import { SessionProgressDot } from './SessionProgressDot'
 
 type EditToolRowProps = {
   card: ToolCard
@@ -61,16 +60,13 @@ export const EditToolRow: Component<EditToolRowProps> = (props) => {
     <div class={`tool-row${props.card.isError ? ' is-error' : ''}`}>
       <button
         type="button"
-        class="tool-ran-header"
+        class={`tool-ran-header${props.card.streaming ? ' tool-ran-streaming' : ''}`}
         onClick={() => {
           setManualToggle(true)
           setOpen((v) => !v)
         }}
         style={{ cursor: 'pointer' }}
       >
-        <Show when={props.card.streaming}>
-          <SessionProgressDot status="running" />
-        </Show>
         <span class="tool-ran-label">{labelForTool(props.card.toolName)}</span>
         <span class="tool-file-chip">
           <FileIcon name={basename()} size={13} />
@@ -95,9 +91,7 @@ export const EditToolRow: Component<EditToolRowProps> = (props) => {
             </Show>
           </span>
         </Show>
-        <Show when={props.card.streaming}>
-          <SessionProgressDot status="running" />
-        </Show>
+        
         <Show when={!props.card.streaming}>
           <span class="tool-chevron" data-open={open()} aria-hidden="true">
             {open() ? '⌄' : '›'}
