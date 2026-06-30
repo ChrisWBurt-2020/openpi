@@ -345,9 +345,6 @@ export function FileTree(props: FileTreeProps) {
         e.preventDefault()
         void deleteNode(node)
       }
-    } else if ((e.key === 'c' || e.key === 'C') && cmdOrCtrl && !e.shiftKey && !e.altKey) {
-      e.preventDefault()
-      void copyNode(node)
     }
   }
   onMount(() => {
