@@ -44,6 +44,11 @@ export function setSessionHostSessionIndex(si: SessionIndexStore | null): void {
   _sessionIndex = si
 }
 
+function sendToMainWindow(channel: string, ...args: unknown[]): void {
+  if (!_mainWindow || _mainWindow.isDestroyed()) return
+  _mainWindow.webContents.send(channel, ...args)
+}
+
 // ─── Callbacks (bridge to main.ts lazy imports) ────────────────────────────────
 
 let _onOutputLine: ((line: OutputLine) => void) | null = null
@@ -122,7 +127,7 @@ export function applySessionValues(ready: SessionReady): void {
     threadCwdRegistry.register(ready.sessionId, { root: ready.cwd })
     threadCwdRegistry.setActive(ready.sessionId)
   }
-  _mainWindow?.webContents.send(IPC.SESSION_READY, ready)
+    sendToMainWindow(IPC.SESSION_READY, ready)
 }
 
 export function clearSessionState(): void {
@@ -151,7 +156,7 @@ export function applySessionReady(ready: SessionReady, cwd: string): void {
     threadCwdRegistry.register(ready.sessionId, { root: ready.cwd })
     threadCwdRegistry.setActive(ready.sessionId)
   }
-  _mainWindow?.webContents.send(IPC.SESSION_READY, ready)
+    sendToMainWindow(IPC.SESSION_READY, ready)
   _onRestartGitMonitoring?.(cwd)
 }
 
@@ -204,7 +209,7 @@ export async function startSession(cwd: string, options: StartSessionOptions = {
     })
   }
 
-  _mainWindow?.webContents.send(IPC.SESSION_READY, ready)
+  sendToMainWindow(IPC.SESSION_READY, ready)
   _onMaybeCheckPiUpdate?.()
   await refreshSessionIndex()
 }
@@ -231,7 +236,7 @@ export function showDeferredWorkspace(cwd: string): void {
     model: null,
     thinkingLevel: null,
   }
-  _mainWindow?.webContents.send(IPC.SESSION_READY, ready)
+  sendToMainWindow(IPC.SESSION_READY, ready)
   void refreshSessionIndex()
   _onMaybeCheckPiUpdate?.()
 }
@@ -244,11 +249,11 @@ export async function refreshSessionIndex(): Promise<void> {
     try {
       const workspacePath = activeWorkspacePath()
       if (!workspacePath) {
-        _mainWindow?.webContents.send(IPC.SESSION_INDEX_UPDATED)
+        sendToMainWindow(IPC.SESSION_INDEX_UPDATED)
         return
       }
       await _sessionIndex?.refreshSessions(_state?.sessionFile ?? null, workspacePath)
-      _mainWindow?.webContents.send(IPC.SESSION_INDEX_UPDATED)
+      sendToMainWindow(IPC.SESSION_INDEX_UPDATED)
     } catch (err) {
       emitSessionError(
         err instanceof Error ? err.message : String(err),

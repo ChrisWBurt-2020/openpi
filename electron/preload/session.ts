@@ -10,6 +10,8 @@ import type {
   PackageOperationResult,
   PathProtectionResult,
   PickWorkspaceResult,
+  ReadTaskSessionHistory as ReadTaskSessionHistoryPayload,
+  ResolveSubSessionPath as ResolveSubSessionPathPayload,
   SessionHistoryPage,
   SessionInfo,
   SessionListItem,
@@ -59,6 +61,12 @@ export const sessionApi = {
     ipcRenderer.invoke(IPC.GET_SESSION_TREE, { path }),
   openSession: (payload: OpenSession): Promise<void> =>
     ipcRenderer.invoke(IPC.OPEN_SESSION, payload),
+  resolveSubSessionPath: (payload: ResolveSubSessionPathPayload): Promise<string | null> =>
+    ipcRenderer.invoke(IPC.RESOLVE_SUB_SESSION_PATH, payload),
+  resolveMostRecentSubSessionPath: (payload: ReadTaskSessionHistoryPayload): Promise<string | null> =>
+    ipcRenderer.invoke(IPC.RESOLVE_MOST_RECENT_SUB_SESSION_PATH, payload),
+  readTaskSessionHistory: (payload: ReadTaskSessionHistoryPayload): Promise<Array<{ id: string; agentType?: string; description?: string; startedAt?: number; sessionName?: string; paneId?: string }>> =>
+    ipcRenderer.invoke(IPC.READ_TASK_SESSION_HISTORY, payload),
   newSession: (cwd?: string, mode?: 'local' | 'worktree', baseBranch?: string): Promise<void> =>
     ipcRenderer.invoke(IPC.NEW_SESSION, { cwd, mode, baseBranch }),
 

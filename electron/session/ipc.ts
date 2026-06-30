@@ -18,6 +18,8 @@ import {
   IPC,
   newSessionSchema,
   openSessionSchema,
+  readTaskSessionHistorySchema,
+  resolveSubSessionPathSchema,
   sessionBashSchema,
   sessionInfoSchema,
   sessionListOptionsSchema,
@@ -33,6 +35,9 @@ import { highRiskShellReason } from '../services/shellEnv'
 import type { SessionState } from '../session/sessionHost'
 import type { SessionIndexStore } from '../session/sessionIndex'
 import { emptyUsageSummary } from '../session/sessionUsage'
+import { resolveSubSessionPath, resolveMostRecentSubSessionPath } from '../services/piTaskArtifacts'
+import { readTaskSessionHistory } from '../services/piTaskArtifacts'
+import path from 'node:path'
 
 interface ConfirmMutationOptions {
   title: string
@@ -268,6 +273,22 @@ export function registerSessionsIpc(deps: SessionsIpcDeps): void {
       )
     }
   )
+
+  deps.ipcMain.handle(IPC.RESOLVE_SUB_SESSION_PATH, async (_event, raw: unknown) => {
+    const { cwd, taskId } = resolveSubSessionPathSchema.parse(raw)
+    const artifactsDir = path.join(cwd, '.pi', 'artifacts')
+    return resolveSubSessionPath(artifactsDir, taskId)
+  })
+
+  deps.ipcMain.handle(IPC.READ_TASK_SESSION_HISTORY, async (_event, raw: unknown) => {
+    const { cwd } = readTaskSessionHistorySchema.parse(raw)
+    return readTaskSessionHistory(cwd)
+  })
+
+  deps.ipcMain.handle(IPC.RESOLVE_MOST_RECENT_SUB_SESSION_PATH, async (_event, raw: unknown) => {
+    const { cwd } = readTaskSessionHistorySchema.parse(raw)
+    return resolveMostRecentSubSessionPath(path.join(cwd, '.pi', 'artifacts'))
+  })
 
   deps.ipcMain.handle(IPC.OPEN_SESSION, async (_event, raw: unknown) => {
     const { path: sessionPath } = openSessionSchema.parse(raw)
