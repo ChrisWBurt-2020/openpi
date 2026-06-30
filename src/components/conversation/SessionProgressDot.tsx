@@ -9,15 +9,15 @@ import type { Component } from 'solid-js'
  * rather than a generic loading spinner.
  *
  * Modes:
- *  - `running`   — accent color, used for foreground/active tools.
+ *  - `running`    — accent color, used for foreground/active tools.
  *  - `background` — warn color, used when the tool is a background handoff
- *                  (e.g. a `task` call that returns immediately while the
- *                  sub-agent continues in `.pi/artifacts/`).
+ *                   (e.g. a `task` call that returns immediately while the
+ *                   sub-agent continues in `.pi/artifacts/`).
  */
 const GRID = 5
-const DOT = 2
-const GAP = 1
-const ORIGIN = 1.5
+const DOT = 3
+const GAP = 1.5
+const ORIGIN = 2
 const SIZE = ORIGIN * 2 + GRID * DOT + (GRID - 1) * GAP
 
 export const SessionProgressDot: Component<{ status?: 'running' | 'background' }> = (
@@ -37,6 +37,13 @@ export const SessionProgressDot: Component<{ status?: 'running' | 'background' }
       width={SIZE}
       height={SIZE}
       viewBox={`0 0 ${SIZE} ${SIZE}`}
+      style={{
+        width: '20px',
+        height: '20px',
+        'flex-shrink': '0',
+        display: 'inline-block',
+        'vertical-align': 'middle',
+      }}
       aria-hidden="true"
     >
       {cells.map((c) => (
@@ -48,6 +55,7 @@ export const SessionProgressDot: Component<{ status?: 'running' | 'background' }
           rx={0.5}
           class="progress-cell"
           data-index={c.index}
+          style={{ fill: 'var(--ink)' }}
         />
       ))}
     </svg>
