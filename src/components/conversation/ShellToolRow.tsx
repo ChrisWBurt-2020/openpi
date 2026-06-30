@@ -20,8 +20,7 @@ export const ShellToolRow: Component<ShellToolRowProps> = (props) => {
   })
 
   const cmd = () => extractCommand(props.card)
-  const isTruncated = () => cmd().length > MAX_CMD
-  const displayCmd = () => (isTruncated() ? `${cmd().slice(0, MAX_CMD)}…` : cmd())
+  const displayCmd = () => cmd()
   const hasOutput = () => !!props.card.output?.trim()
 
   return (
@@ -35,14 +34,14 @@ export const ShellToolRow: Component<ShellToolRowProps> = (props) => {
             setOpen((v) => !v)
           }
         }}
-        title={isTruncated() ? cmd() : undefined}
+        
         style={{ cursor: hasOutput() ? 'pointer' : 'default' }}
       >
-        <span class="tool-ran-label">{labelForTool(props.card.toolName)}</span>
-        <code class="tool-ran-cmd">{displayCmd()}</code>
         <Show when={props.card.streaming}>
           <SessionProgressDot status="running" />
         </Show>
+        <span class="tool-ran-label">{labelForTool(props.card.toolName)}</span>
+        <code class="tool-ran-cmd">{displayCmd()}</code>
         <Show when={hasOutput() && !props.card.streaming}>
           <span class="tool-chevron" data-open={open()} aria-hidden="true">
             {open() ? '⌄' : '›'}

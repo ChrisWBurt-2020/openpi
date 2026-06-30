@@ -23,6 +23,9 @@ export const GenericToolRow: Component<GenericToolRowProps> = (props) => {
         onClick={() => hasOutput() && setOpen((v) => !v)}
         style={{ cursor: hasOutput() ? 'pointer' : 'default' }}
       >
+        <Show when={props.card.streaming}>
+          <SessionProgressDot status="running" />
+        </Show>
         <span class="tool-ran-label">{labelForTool(props.card.toolName)}</span>
         <span class="tool-ran-preview">{displayPreview()}</span>
         <Show when={props.card.streaming}>

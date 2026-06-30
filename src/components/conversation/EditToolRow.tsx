@@ -68,6 +68,9 @@ export const EditToolRow: Component<EditToolRowProps> = (props) => {
         }}
         style={{ cursor: 'pointer' }}
       >
+        <Show when={props.card.streaming}>
+          <SessionProgressDot status="running" />
+        </Show>
         <span class="tool-ran-label">{labelForTool(props.card.toolName)}</span>
         <span class="tool-file-chip">
           <FileIcon name={basename()} size={13} />
