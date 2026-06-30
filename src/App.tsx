@@ -308,7 +308,7 @@ export default function App() {
               }
               onBranchClick={() => toggleRefsRef?.()}
               sessionName={displayName()}
-              isStreaming={session.isStreaming}
+              isStreaming={conversationStreaming()}
               onRenameSession={session.setSessionName}
               onOpenWorkspace={session.openWorkspace}
               onOpenSettings={() => setCustomizationsOpen(true)}

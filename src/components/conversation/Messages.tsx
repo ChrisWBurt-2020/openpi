@@ -103,6 +103,16 @@ export const AssistantMessageGroup: Component<AssistantMessageGroupProps> = (pro
   })
 
   const hasContent = createMemo(() => segments.length > 0)
+  const latestVisibleToolCallId = createMemo(() => {
+    let id: string | null = null
+    for (const segment of segments) {
+      if (segment.kind !== 'rail') continue
+      for (const card of segment.cards) id = card.toolCallId
+    }
+    return id
+  })
+  const shouldShimmerTool = (card: ToolCard) =>
+    card.streaming || (props.agentStreaming && card.toolCallId === latestVisibleToolCallId())
 
   const getAllText = () =>
     props.messages
@@ -123,7 +133,7 @@ export const AssistantMessageGroup: Component<AssistantMessageGroupProps> = (pro
                     {(card) => (
                       <ToolCardView
                         card={card}
-                        shimmerActive={card.streaming}
+                        shimmerActive={shouldShimmerTool(card)}
                         onFileClick={props.onFileClick}
                         onOpenSubSession={props.onOpenSubSession}
                         resolveTaskId={props.resolveTaskId}
@@ -217,7 +227,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
           {(card) => (
             <ToolCardView
               card={card}
-              shimmerActive={card.streaming}
+              shimmerActive={card.streaming || Boolean(props.agentStreaming)}
               onFileClick={props.onFileClick}
               onOpenSubSession={props.onOpenSubSession}
               resolveTaskId={props.resolveTaskId}

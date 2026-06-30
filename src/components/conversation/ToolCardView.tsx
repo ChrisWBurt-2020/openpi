@@ -30,7 +30,7 @@ export const ToolCardView: Component<ToolCardViewProps> = (props) => {
   if (SHELL_TOOLS.has(props.card.toolName))
     return (
       <div class={shimmerClass()}>
-        <ShellToolRow card={props.card} displayPreferences={props.displayPreferences} />
+        <ShellToolRow card={props.card} shimmerActive={props.shimmerActive} displayPreferences={props.displayPreferences} />
       </div>
     )
   if (EDIT_TOOLS.has(props.card.toolName)) {
@@ -38,6 +38,7 @@ export const ToolCardView: Component<ToolCardViewProps> = (props) => {
       <div class={shimmerClass()}>
         <EditToolRow
           card={props.card}
+          shimmerActive={props.shimmerActive}
           onFileClick={props.onFileClick}
           displayPreferences={props.displayPreferences}
         />
@@ -59,13 +60,13 @@ export const ToolCardView: Component<ToolCardViewProps> = (props) => {
   if (FILE_TOOLS.has(props.card.toolName)) {
     return (
       <div class={shimmerClass()}>
-        <FileToolRow card={props.card} onFileClick={props.onFileClick} />
+        <FileToolRow card={props.card} shimmerActive={props.shimmerActive} onFileClick={props.onFileClick} />
       </div>
     )
   }
   return (
     <div class={shimmerClass()}>
-      <GenericToolRow card={props.card} />
+      <GenericToolRow card={props.card} shimmerActive={props.shimmerActive} />
     </div>
   )
 }

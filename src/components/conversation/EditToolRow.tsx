@@ -8,6 +8,7 @@ import { extractEditPairs, extractFilePath, extractWriteLines } from './toolCard
 
 type EditToolRowProps = {
   card: ToolCard
+  shimmerActive?: boolean
   onFileClick?: (relativePath: string) => void
   displayPreferences: DisplayPreferences
 }
@@ -60,14 +61,14 @@ export const EditToolRow: Component<EditToolRowProps> = (props) => {
     <div class={`tool-row${props.card.isError ? ' is-error' : ''}`}>
       <button
         type="button"
-        class={`tool-ran-header${props.card.streaming ? ' tool-ran-streaming' : ''}`}
+        class={`tool-ran-header${props.shimmerActive === true ? ' tool-ran-streaming' : ''}`}
         onClick={() => {
           setManualToggle(true)
           setOpen((v) => !v)
         }}
         style={{ cursor: 'pointer' }}
       >
-        <span class="tool-ran-label" style={props.card.streaming ? 'animation: tool-name-shimmer 1.4s ease-in-out infinite' : ''}>{labelForTool(props.card.toolName)}</span>
+        <span class="tool-ran-label">{labelForTool(props.card.toolName)}</span>
         <span class="tool-file-chip">
           <FileIcon name={basename()} size={13} />
           <span

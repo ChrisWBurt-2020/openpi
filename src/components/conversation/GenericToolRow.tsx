@@ -5,6 +5,7 @@ import { extractCommand, MAX_CMD } from './toolCardHelpers'
 
 type GenericToolRowProps = {
   card: ToolCard
+  shimmerActive?: boolean
 }
 
 export const GenericToolRow: Component<GenericToolRowProps> = (props) => {
@@ -18,11 +19,11 @@ export const GenericToolRow: Component<GenericToolRowProps> = (props) => {
     <div class={`tool-row${props.card.isError ? ' is-error' : ''}`}>
       <button
         type="button"
-        class={`tool-ran-header${props.card.streaming ? ' tool-ran-streaming' : ''}`}
+        class={`tool-ran-header${props.shimmerActive === true ? ' tool-ran-streaming' : ''}`}
         onClick={() => hasOutput() && setOpen((v) => !v)}
         style={{ cursor: hasOutput() ? 'pointer' : 'default' }}
       >
-        <span class="tool-ran-label" style={props.card.streaming ? 'animation: tool-name-shimmer 1.4s ease-in-out infinite' : ''}>{labelForTool(props.card.toolName)}</span>
+        <span class="tool-ran-label">{labelForTool(props.card.toolName)}</span>
         <span class="tool-ran-preview">{displayPreview()}</span>
         
         <Show when={hasOutput() && !props.card.streaming}>

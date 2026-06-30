@@ -4257,14 +4257,22 @@ body.panel-dragging {
 @property --progress-lo { syntax: "<number>"; inherits: false; initial-value: 0.15; }
 
 /* Text shimmer for streaming tool name (non-task tool rows) */
-@property --shimmer-opacity { syntax: "<number>"; inherits: false; initial-value: 1; }
 .tool-ran-streaming .tool-ran-label {
-  animation: tool-name-shimmer 1.4s ease-in-out infinite;
+  color: var(--ink);
+  --progress-hi: 1;
+  --progress-lo: 0.55;
+  opacity: var(--progress-hi);
+  animation: tool-name-pulse 1.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 
-@keyframes tool-name-shimmer {
-  0%, 100% { opacity: 0.45; }
-  50% { opacity: 1; }
+@keyframes tool-name-pulse {
+  0%,
+  100% {
+    opacity: var(--progress-hi, 1);
+  }
+  50% {
+    opacity: var(--progress-lo, 0.55);
+  }
 }
 @keyframes session-progress-pulse {
   0%,
