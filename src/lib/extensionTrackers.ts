@@ -1,7 +1,9 @@
 /**
  * Tracks `@heyhuynhgiabuu/pi-task` `task` tool calls from AgentSessionEvent stream.
- * Durable task state lives in `.pi/artifacts/TASKS.md` (see artifact watcher).
+ * Durable task state lives in `.pi/task-session-history.json` and sub-session JSONL.
  */
+import { isValidPiTaskId } from './taskToolHelpers'
+
 export type TaskRunStatus = 'running' | 'completed' | 'failed' | 'queued'
 
 export interface TrackedTask {
@@ -30,7 +32,8 @@ export class TaskTracker {
     const description = String(args.description ?? 'Task')
     const agentType = String(args.agent_type ?? 'worker')
     const background = args.background !== false
-    const taskId = typeof args.task_id === 'string' ? args.task_id : undefined
+    const rawTaskId = typeof args.task_id === 'string' ? args.task_id : undefined
+    const taskId = isValidPiTaskId(rawTaskId) ? rawTaskId : undefined
     const conversationId =
       typeof args.conversation_id === 'string' ? args.conversation_id : undefined
     this.tasks.push({
@@ -57,7 +60,8 @@ export class TaskTracker {
     const idx = this.tasks.findIndex((t) => t.tempId === toolCallId)
     if (idx === -1) return false
     const task = this.tasks[idx]
-    const detailTaskId = typeof details?.task_id === 'string' ? details.task_id : undefined
+    const rawDetailTaskId = typeof details?.task_id === 'string' ? details.task_id : undefined
+    const detailTaskId = isValidPiTaskId(rawDetailTaskId) ? rawDetailTaskId : undefined
     const phase = typeof details?.phase === 'string' ? details.phase : undefined
     const background = details?.background === true || task.background
     if (!isError && background && !phase) {

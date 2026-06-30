@@ -1,11 +1,9 @@
 /**
- * SubagentFileTracker — pure state container for sub-agent artifacts.
+ * SubagentFileTracker — pure state container for legacy task artifacts.
  *
- * Mirrors the data emitted by `electron/services/artifactWatcher.ts`.
- * The watcher polls `.pi/artifacts/task-<id>/` and pushes an
- * `ArtifactUpdate` IPC event on changes. This class is the
- * single-source-of-truth for the renderer; UI components read
- * `snapshot()` reactively.
+ * The current pi-task integration uses `.pi/task-session-history.json`
+ * plus sub-session JSONL. This tracker remains for compatibility with
+ * older artifact payloads but no longer reads TASKS markdown.
  */
 import type { SubagentArtifact } from './ipc/_full'
 
