@@ -3717,6 +3717,42 @@ body.panel-dragging {
   margin-top: 0.2em;
   margin-bottom: 0;
 }
+/* <summary> — reset default list-item disclosure */
+.md-content summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 700;
+  color: var(--ink);
+  padding: 2px 0;
+}
+
+.md-content details[open] > summary::before {
+  transform: rotate(90deg);
+}
+.md-content details {
+  margin: 0.6em 0;
+}
+.md-content details > * + * {
+  margin-top: 0.5em;
+}
+/* <pre> — wrap, smaller font, no overflow */
+.md-content pre,
+.tool-ran-output pre {
+  font-family: var(--font-code);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
 /* Inline code */
 .md-code-inline {
   padding: 1px 6px;
@@ -3823,7 +3859,7 @@ body.panel-dragging {
   padding-right: 1.2em;
   min-width: 2.4em;
   color: var(--mute);
-  opacity: 0.5;
+  opacity: 0.6 !important;
   font-size: 0.9em;
   text-indent: 0;
 }
@@ -4235,6 +4271,52 @@ body.panel-dragging {
   color: var(--ash);
   line-height: 1;
 }
+
+/* Animated dot grid for streaming tools (5x5) */
+.progress-dots {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
+
+.progress-cell {
+  fill: var(--ink) !important;
+  opacity: 0.6 !important;
+  animation: progress-cell-pulse 1.2s ease-in-out infinite !important;
+}
+
+@keyframes progress-cell-pulse {
+  0%, 100% { opacity: 0.6 !important; }
+  50% { opacity: 1 !important; }
+}
+
+.progress-dots .progress-cell:nth-child(1)  { animation-delay: 0.00s; }
+.progress-dots .progress-cell:nth-child(2)  { animation-delay: 0.05s; }
+.progress-dots .progress-cell:nth-child(3)  { animation-delay: 0.10s; }
+.progress-dots .progress-cell:nth-child(4)  { animation-delay: 0.15s; }
+.progress-dots .progress-cell:nth-child(5)  { animation-delay: 0.20s; }
+.progress-dots .progress-cell:nth-child(6)  { animation-delay: 0.25s; }
+.progress-dots .progress-cell:nth-child(7)  { animation-delay: 0.30s; }
+.progress-dots .progress-cell:nth-child(8)  { animation-delay: 0.35s; }
+.progress-dots .progress-cell:nth-child(9)  { animation-delay: 0.40s; }
+.progress-dots .progress-cell:nth-child(10) { animation-delay: 0.45s; }
+.progress-dots .progress-cell:nth-child(11) { animation-delay: 0.50s; }
+.progress-dots .progress-cell:nth-child(12) { animation-delay: 0.55s; }
+.progress-dots .progress-cell:nth-child(13) { animation-delay: 0.60s; }
+.progress-dots .progress-cell:nth-child(14) { animation-delay: 0.65s; }
+.progress-dots .progress-cell:nth-child(15) { animation-delay: 0.70s; }
+.progress-dots .progress-cell:nth-child(16) { animation-delay: 0.75s; }
+.progress-dots .progress-cell:nth-child(17) { animation-delay: 0.80s; }
+.progress-dots .progress-cell:nth-child(18) { animation-delay: 0.85s; }
+.progress-dots .progress-cell:nth-child(19) { animation-delay: 0.90s; }
+.progress-dots .progress-cell:nth-child(20) { animation-delay: 0.95s; }
+.progress-dots .progress-cell:nth-child(21) { animation-delay: 1.00s; }
+.progress-dots .progress-cell:nth-child(22) { animation-delay: 1.05s; }
+.progress-dots .progress-cell:nth-child(23) { animation-delay: 1.10s; }
+.progress-dots .progress-cell:nth-child(24) { animation-delay: 1.15s; }
+.progress-dots .progress-cell:nth-child(25) { animation-delay: 1.20s; }
 
 /* Expand chevron */
 .tool-chevron {
@@ -8145,7 +8227,7 @@ body.panel-dragging {
 }
 
 .git-icon-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.6 !important;
   cursor: not-allowed;
 }
 
@@ -9792,7 +9874,7 @@ body.panel-dragging {
   opacity: 0.9;
 }
 .hooks-panel-save-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.6 !important;
   cursor: not-allowed;
 }
 
@@ -9809,7 +9891,7 @@ body.panel-dragging {
   background: var(--surface-soft);
 }
 .hooks-panel-cancel-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.6 !important;
   cursor: not-allowed;
 }
 
@@ -10038,7 +10120,7 @@ body.panel-dragging {
  * full color when hovering the tree pane OR when the file is changed. */
 .ftree-item img {
   filter: grayscale(1);
-  opacity: 0.5;
+  opacity: 0.6 !important;
   transition:
     filter 0.15s ease,
     opacity 0.15s ease;
@@ -12324,7 +12406,7 @@ body.panel-dragging {
   color: var(--ink-soft);
 }
 .cp-sub-signin-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.6 !important;
   cursor: not-allowed;
 }
 .cp-sub-signin-btn.is-loading {
@@ -13705,7 +13787,7 @@ body.panel-dragging {
   color: #e07030;
 }
 .pkg-confirm-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.6 !important;
   cursor: not-allowed;
 }
 
@@ -16366,7 +16448,7 @@ body.panel-dragging {
 }
 
 .review-line-annotation-btn.is-primary:disabled {
-  opacity: 0.5;
+  opacity: 0.6 !important;
   cursor: not-allowed;
 }
 
@@ -16397,7 +16479,7 @@ body.panel-dragging {
   background: var(--hover);
 }
 .diff-scope-trigger:disabled {
-  opacity: 0.5;
+  opacity: 0.6 !important;
   cursor: not-allowed;
 }
 
@@ -16619,3 +16701,150 @@ body.panel-dragging {
   align-items: center;
   gap: 4px;
 }
+
+
+/* TaskToolRow — single-line task delegation (flush, matches .tool-ran-header chrome) */
+.tool-row.task-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 4px 0 0;
+  padding: 3px 0;
+  border: none;
+  background: transparent;
+  border-radius: var(--r-sm);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  color: var(--graphite);
+  cursor: default;
+  transition: color 120ms ease;
+}
+
+.tool-row.task-tool[role="button"] {
+  cursor: pointer;
+}
+
+.tool-row.task-tool[role="button"]:hover {
+  color: var(--ink);
+}
+
+.tool-row.task-tool[role="button"]:hover .tool-chevron {
+  opacity: 1;
+  transform: translateX(1px);
+}
+
+.tool-row.task-tool[data-status="pending"] {
+  color: var(--ink);
+}
+
+.tool-row.task-tool[data-status="failed"],
+.tool-row.task-tool.is-error {
+  color: var(--danger, #f87171);
+}
+
+.tool-row.task-tool .tool-row-title {
+  flex-shrink: 0;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(72ch, 100%);
+}
+
+.tool-row.task-tool .tool-row-meta {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--graphite);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.tool-row.task-tool .tool-row-status {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  color: inherit;
+  opacity: 0.7;
+}
+
+.tool-row.task-tool .tool-row-status[data-status="pending"] {
+  color: var(--task-warn, #b8860b);
+  opacity: 1;
+}
+
+.tool-row.task-tool .tool-row-status[data-status="completed"] {
+  color: #2e7d4f;
+  opacity: 1;
+}
+
+.tool-row.task-tool .tool-row-status[data-status="failed"] {
+  color: var(--danger, #f87171);
+  opacity: 1;
+}
+
+.tool-row.task-tool .tool-chevron {
+  font-size: 16px;
+  line-height: 1;
+  color: var(--graphite);
+  opacity: 0;
+  flex: 0 0 auto;
+  transition: opacity 120ms ease, transform 120ms ease;
+  margin-left: 2px;
+}
+
+
+/* SessionProgressDot — 5×5 animated dot grid for streaming tools */
+.progress-dots {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
+
+.progress-cell {
+  fill: var(--ink) !important;
+  opacity: 0.6 !important;
+  animation: progress-cell-pulse 1.2s ease-in-out infinite !important;
+}
+
+@keyframes progress-cell-pulse {
+  0%, 100% { opacity: 0.6 !important; }
+  50% { opacity: 1 !important; }
+}
+
+.progress-dots .progress-cell:nth-child(1)  { animation-delay: 0.00s; }
+.progress-dots .progress-cell:nth-child(2)  { animation-delay: 0.05s; }
+.progress-dots .progress-cell:nth-child(3)  { animation-delay: 0.10s; }
+.progress-dots .progress-cell:nth-child(4)  { animation-delay: 0.15s; }
+.progress-dots .progress-cell:nth-child(5)  { animation-delay: 0.20s; }
+.progress-dots .progress-cell:nth-child(6)  { animation-delay: 0.25s; }
+.progress-dots .progress-cell:nth-child(7)  { animation-delay: 0.30s; }
+.progress-dots .progress-cell:nth-child(8)  { animation-delay: 0.35s; }
+.progress-dots .progress-cell:nth-child(9)  { animation-delay: 0.40s; }
+.progress-dots .progress-cell:nth-child(10) { animation-delay: 0.45s; }
+.progress-dots .progress-cell:nth-child(11) { animation-delay: 0.50s; }
+.progress-dots .progress-cell:nth-child(12) { animation-delay: 0.55s; }
+.progress-dots .progress-cell:nth-child(13) { animation-delay: 0.60s; }
+.progress-dots .progress-cell:nth-child(14) { animation-delay: 0.65s; }
+.progress-dots .progress-cell:nth-child(15) { animation-delay: 0.70s; }
+.progress-dots .progress-cell:nth-child(16) { animation-delay: 0.75s; }
+.progress-dots .progress-cell:nth-child(17) { animation-delay: 0.80s; }
+.progress-dots .progress-cell:nth-child(18) { animation-delay: 0.85s; }
+.progress-dots .progress-cell:nth-child(19) { animation-delay: 0.90s; }
+.progress-dots .progress-cell:nth-child(20) { animation-delay: 0.95s; }
+.progress-dots .progress-cell:nth-child(21) { animation-delay: 1.00s; }
+.progress-dots .progress-cell:nth-child(22) { animation-delay: 1.05s; }
+.progress-dots .progress-cell:nth-child(23) { animation-delay: 1.10s; }
+.progress-dots .progress-cell:nth-child(24) { animation-delay: 1.15s; }
+.progress-dots .progress-cell:nth-child(25) { animation-delay: 1.20s; }
