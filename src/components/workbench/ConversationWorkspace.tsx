@@ -1,4 +1,4 @@
-import { GitBranch, X } from 'lucide-solid'
+import { ArrowLeft, GitBranch, X } from 'lucide-solid'
 import { createEffect, createMemo, createSignal, Show } from 'solid-js'
 import type { useAgentReviewChanges } from '../../hooks/useAgentReviewChanges'
 import { useFileContentCache } from '../../hooks/useFileContentCache'
@@ -189,6 +189,41 @@ export function ConversationWorkspace(props: ConversationWorkspaceProps) {
         class={`main-panel${props.openFiles.length > 0 || props.showGitHistory || reviewChangeCount() > 0 ? ' main-panel--split' : ''}`}
       >
         <div class="main-panel-conversation">
+          <Show when={props.session.isSubSession()}>
+            <nav
+              class="sub-session-breadcrumb"
+              data-component="sub-session-breadcrumb"
+              data-has-parent={props.session.parentStack().length > 0 || undefined}
+            >
+              <button
+                type="button"
+                class="sub-session-breadcrumb-back"
+                data-slot="sub-session-breadcrumb-back"
+                disabled={props.session.parentStack().length === 0}
+                title={
+                  props.session.parentStack().length === 0
+                    ? 'Sub-session — no parent in stack'
+                    : 'Back to parent session'
+                }
+                onClick={() => {
+                  void props.session.popToParent()
+                }}
+              >
+                <ArrowLeft size={12} />
+                <span data-slot="sub-session-breadcrumb-label">
+                  <Show
+                    when={props.session.parentStack().length > 0}
+                    fallback={<>Sub-session</>}
+                  >
+                    Back to {props.session.parentStack().at(-1)?.name ?? 'parent'}
+                  </Show>
+                </span>
+              </button>
+              <span data-slot="sub-session-breadcrumb-tag" class="sub-session-breadcrumb-tag">
+                sub-session
+              </span>
+            </nav>
+          </Show>
           <ConversationPane
             messages={props.messages}
             workspaceName={props.workspaceName}
@@ -197,6 +232,9 @@ export function ConversationWorkspace(props: ConversationWorkspaceProps) {
             setBottomRef={props.session.setBottomRef}
             onFork={props.session.forkFromMessage}
             onFileClick={props.onOpenFile}
+            onOpenSubSession={props.session.openSubSession}
+            resolveTaskId={(card) => props.session.resolveTaskIdForCard(card)}
+            resolveTaskStatus={(taskId) => props.session.resolveTaskStatusForTaskId(taskId)}
             onOpenWorkspace={props.session.openWorkspace}
             displayPreferences={props.displayPreferences}
             isStreaming={props.isStreaming}

@@ -5,7 +5,7 @@ import { createStore, reconcile } from 'solid-js/store'
 import { VList, type VListHandle } from 'virtua/solid'
 import type { DisplayPreferences } from '../../lib/displayPreferences'
 import type { SessionHistoryMessage, WorkspaceSummaryInfo } from '../../lib/ipc'
-import type { Message } from '../../types/session'
+import type { Message, ToolCard } from '../../types/session'
 import { ExtensionResponseCard } from './ExtensionResponseCard'
 import { AssistantMessageGroup } from './Messages'
 
@@ -106,6 +106,8 @@ function formatBranchLabel(branch: string | null | undefined): string {
   return `Branch ${branch}`
 }
 
+type TaskStatus = 'running' | 'done' | 'error'
+
 type ConversationPaneProps = {
   messages: Message[]
   workspaceName: string
@@ -114,6 +116,9 @@ type ConversationPaneProps = {
   setBottomRef: (el: HTMLDivElement) => void
   onFork?: (messageId: string) => void
   onFileClick?: (path: string) => void
+  onOpenSubSession?: (taskId: string | null) => void
+  resolveTaskId?: (card: ToolCard) => string | null
+  resolveTaskStatus?: (taskId: string | null) => TaskStatus | null
   onOpenWorkspace?: () => void
   displayPreferences: DisplayPreferences
   isStreaming: boolean
@@ -232,6 +237,9 @@ export const ConversationPane: Component<ConversationPaneProps> = (props) => {
           agentStreaming={props.isStreaming}
           onFork={props.onFork}
           onFileClick={props.onFileClick}
+          onOpenSubSession={props.onOpenSubSession}
+          resolveTaskId={props.resolveTaskId}
+          resolveTaskStatus={props.resolveTaskStatus}
           displayPreferences={props.displayPreferences}
         />
       )

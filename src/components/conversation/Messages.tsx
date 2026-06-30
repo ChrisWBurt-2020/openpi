@@ -11,6 +11,7 @@ import { ToolCardView } from './ToolCardView'
 import { UserMessage } from './UserMessage'
 import { aggregateUsage, LiveUsageRow, UsageRow, usageTotal } from './usage'
 
+type TaskStatus = 'running' | 'done' | 'error'
 type Segment =
   | { kind: 'rail'; cards: ToolCard[]; id: string }
   | { kind: 'thinking'; content: string; streaming?: boolean; id: string }
@@ -73,6 +74,9 @@ export type AssistantMessageGroupProps = {
   agentStreaming: boolean
   onFork?: (id: string) => void
   onFileClick?: (path: string) => void
+  onOpenSubSession?: (taskId: string | null) => void
+  resolveTaskId?: (card: ToolCard) => string | null
+  resolveTaskStatus?: (taskId: string | null) => TaskStatus | null
   displayPreferences: DisplayPreferences
 }
 
@@ -100,7 +104,6 @@ export const AssistantMessageGroup: Component<AssistantMessageGroupProps> = (pro
 
   const hasContent = createMemo(() => segments.length > 0)
 
-  // Lazy: only computed when the copy button is clicked, not on every delta.
   const getAllText = () =>
     props.messages
       .map((msg) => msg.text)
@@ -108,7 +111,6 @@ export const AssistantMessageGroup: Component<AssistantMessageGroupProps> = (pro
       .join('\n\n')
 
   const modelName = createMemo(() => props.messages.find((msg) => msg.modelName)?.modelName)
-
   return (
     <div class="message-row assistant-message-row">
       <div class="assistant-body">
@@ -121,8 +123,11 @@ export const AssistantMessageGroup: Component<AssistantMessageGroupProps> = (pro
                     {(card) => (
                       <ToolCardView
                         card={card}
-                        shimmerActive={props.agentStreaming}
+                        shimmerActive={card.streaming}
                         onFileClick={props.onFileClick}
+                        onOpenSubSession={props.onOpenSubSession}
+                        resolveTaskId={props.resolveTaskId}
+                        resolveTaskStatus={props.resolveTaskStatus}
                         displayPreferences={props.displayPreferences}
                       />
                     )}
@@ -186,6 +191,9 @@ type AssistantMessageProps = {
   agentStreaming?: boolean
   onFork?: (id: string) => void
   onFileClick?: (path: string) => void
+  onOpenSubSession?: (taskId: string | null) => void
+  resolveTaskId?: (card: ToolCard) => string | null
+  resolveTaskStatus?: (taskId: string | null) => TaskStatus | null
   displayPreferences: DisplayPreferences
 }
 
@@ -209,8 +217,11 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
           {(card) => (
             <ToolCardView
               card={card}
-              shimmerActive={props.agentStreaming ?? props.message.streaming ?? false}
+              shimmerActive={card.streaming}
               onFileClick={props.onFileClick}
+              onOpenSubSession={props.onOpenSubSession}
+              resolveTaskId={props.resolveTaskId}
+              resolveTaskStatus={props.resolveTaskStatus}
               displayPreferences={props.displayPreferences}
             />
           )}
@@ -265,7 +276,10 @@ export function renderMessage(
   message: Message,
   onFork?: (id: string) => void,
   onFileClick?: (path: string) => void,
-  displayPreferences: DisplayPreferences = DEFAULT_DISPLAY_PREFERENCES
+  displayPreferences: DisplayPreferences = DEFAULT_DISPLAY_PREFERENCES,
+  onOpenSubSession?: (taskId: string | null) => void,
+  resolveTaskId?: (card: ToolCard) => string | null,
+  resolveTaskStatus?: (taskId: string | null) => TaskStatus | null
 ) {
   if (message.role === 'system') return <SystemMsg message={message as SystemMessage} />
   if (message.role === 'extension') return <ExtensionResponseCard message={message} />
@@ -276,6 +290,9 @@ export function renderMessage(
       message={message as SessionHistoryMessage}
       onFork={onFork}
       onFileClick={onFileClick}
+      onOpenSubSession={onOpenSubSession}
+      resolveTaskId={resolveTaskId}
+      resolveTaskStatus={resolveTaskStatus}
       displayPreferences={displayPreferences}
     />
   )
