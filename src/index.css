@@ -427,12 +427,6 @@ input::placeholder {
 .topbar-stat-unt {
   color: var(--graphite);
 }
-.topbar-streaming-dot {
-  color: var(--ink);
-  font-size: 22px;
-  line-height: 1;
-  flex-shrink: 0;
-}
 
 /* Right zone */
 .topbar-right-zone {

@@ -6,6 +6,7 @@ import { GitBranch, House, MonitorCog, Plus } from 'lucide-solid'
 import { createEffect, createMemo, createSignal, For, Show } from 'solid-js'
 import type { ModelInfo, SessionListItem } from '../lib/ipc'
 import { isMacPlatform } from '../lib/shortcutFormat'
+import { SessionProgressDot } from './conversation/SessionProgressDot'
 
 interface Props {
   workspaceName: string
@@ -226,7 +227,7 @@ export function TopBar(props: Props) {
         </Show>
 
         <Show when={props.isStreaming}>
-          <span class="pulse topbar-streaming-dot">·</span>
+          <SessionProgressDot status="running" />
         </Show>
       </div>
 
