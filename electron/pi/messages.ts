@@ -9,6 +9,7 @@ import type {
   playSoundEffect as playSound,
 } from '../services/notificationHost'
 import type { SidecarMessage } from './sidecar'
+import { isStaleExtensionCtxEvent } from './staleCtx'
 
 interface SidecarMessageDeps {
   getMainWindow: () => BrowserWindow | null
@@ -45,6 +46,8 @@ export function createSidecarMessageHandler(deps: SidecarMessageDeps) {
       }
 
       case 'session_event': {
+        if (isStaleExtensionCtxEvent(msg.event)) return
+
         const event = msg.event as SessionEventShape
         const window = deps.getMainWindow()
         setAgentReviewWindow(window)

@@ -24,6 +24,7 @@ import { expandPromptTemplateText } from '../../src/lib/sessionPrompt'
 import { createOpenPiExtensionUIContext } from './extensionUiContext'
 import { fulfillExtensionUiPending } from './extensionUiPending'
 import { enforceIgnoreScriptsEnv } from './safePackageManager'
+import { isStaleExtensionCtxEvent, isStaleExtensionCtxMessage } from './staleCtx'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -290,10 +291,15 @@ async function startSession(
   } = {}
 ): Promise<void> {
   // Dispose previous session — emit session_shutdown first so extensions
-  // (e.g. pi-sub-bar) can clean up timers before the ctx becomes stale.
+  // (e.g. pi-task polling) clear timers and drop captured `pi` before ctx invalidates.
   if (state) {
     state.unsubscribe()
-    await emitSessionShutdown(state.session, 'new')
+    const shutdownReason: 'new' | 'resume' | 'fork' = opts.forkEntryId
+      ? 'fork'
+      : opts.sessionFile
+        ? 'resume'
+        : 'new'
+    await emitSessionShutdown(state.session, shutdownReason)
     state.session.dispose()
     state = null
   }
@@ -355,7 +361,17 @@ async function startSession(
         },
       },
       onError: (err) => {
-        outputLine('error', `[extension] ${err.extensionPath} (${err.event}): ${err.error}`)
+        // Suppress the benign "stale extension ctx" errors from pi-task.
+        // pi-task's background polling captures `pi` (ExtensionAPI); when
+        // our reload path does a full session replacement, in-flight async
+        // work briefly calls `pi.sendMessage` on the now-stale ctx. The
+        // SDK throws messages starting with "This extension ctx is stale
+        // after session replacement or reload..." which surface as noisy
+        // extension_error events. They are harmless — the new session is
+        // already running. Filter them so the user only sees real errors.
+        const msg = err.error
+        if (isStaleExtensionCtxMessage(msg)) return
+        outputLine('error', `[extension] ${err.extensionPath} (${err.event}): ${msg}`)
       },
     })
   } catch (err) {
@@ -366,6 +382,8 @@ async function startSession(
   }
 
   const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
+    if (isStaleExtensionCtxEvent(event)) return
+
     send({ type: 'session_event', event: event as Record<string, unknown> })
 
     const ev = event as {
@@ -707,10 +725,26 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
         })
         break
       }
-      // /reload re-reads keybindings, extensions, skills, prompts,
-      // and context files via the SDK's session.reload().
+      // /reload triggers an SDK session.reload() which invalidates all
+      // extension ctxs. pi-task captures `pi` (ExtensionAPI) in its background
+      // polling closure, so in-flight async work calls `pi.sendMessage` on
+      // a stale ctx and throws "this extension ctx is stale...".
+      //
+      // The safe path is a full session replacement: dispose the current
+      // session (atomically destroying its extension runner + timers) and
+      // create a new one with the same session file. All old extension state
+      // goes away cleanly; new state is re-initialized.
       try {
-        await state.session.reload()
+        const previous = state
+        state = null
+        previous.unsubscribe()
+        await emitSessionShutdown(previous.session, 'reload')
+        previous.session.dispose()
+        await startSession(previous.cwd, {
+          sessionFile: previous.session.sessionFile ?? undefined,
+          requestId: cmd.requestId,
+          workspaceTrusted: previous.workspaceTrusted,
+        })
       } catch (err) {
         send({
           type: 'error',
