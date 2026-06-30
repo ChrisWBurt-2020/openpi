@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onMount, Show } from 'solid-js'
+import { createEffect, createSignal, onCleanup, onMount, Show } from 'solid-js'
 import { useGitPanelDerived } from '../../hooks/useGitPanelDerived'
 import type { GitChangedFile, GitStatusResult, GitSyncAction } from '../../lib/ipc'
 import type { DiffScope } from './DiffScopeSwitcher'
@@ -79,7 +79,7 @@ export function GitPanel(props: GitPanelProps) {
   })
 
   createEffect(() => {
-    props.cwd
+    const cwd = props.cwd
     mounted = true
 
     const unsub = window.openpi.git.onStatusChanged((nextStatus) => {
@@ -87,14 +87,14 @@ export function GitPanel(props: GitPanelProps) {
     })
 
     // Pass explicit cwd from props when available (more reliable than main-process registry).
-    void window.openpi.git.getStatus(props.cwd ?? undefined).then((nextStatus) => {
+    void window.openpi.git.getStatus(cwd ?? undefined).then((nextStatus) => {
       if (nextStatus && mounted) setStatus(nextStatus)
     })
 
-    return () => {
+    onCleanup(() => {
       mounted = false
       unsub()
-    }
+    })
   })
 
   const handleFileClick = async (file: GitChangedFile) => {
