@@ -42,7 +42,10 @@ export function resolveTokenRatesSync(modelId: string, provider?: string): Token
     const key = `${c.provider}:${c.id}`
     if (seen.has(key)) continue
     seen.add(key)
-    const model = getBuiltinModel(c.provider as Parameters<typeof getBuiltinModel>[0], c.id as never)
+    const model = getBuiltinModel(
+      c.provider as Parameters<typeof getBuiltinModel>[0],
+      c.id as never
+    )
     if (model?.cost) return model.cost
   }
   return null
