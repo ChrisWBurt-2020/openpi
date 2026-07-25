@@ -93,9 +93,26 @@ export type SidecarMessage =
   | { type: 'error'; requestId?: string; message: string }
   | { type: 'stopped' }
 
+/**
+ * How the open session relates to the file the user actually asked for
+ * (ADR-003). 'read-write' is the normal case. 'cloned' means the requested
+ * file was unsafe to write — newer session format, unreadable header, or
+ * another process holding the advisory lock — so a detached copy was opened
+ * instead and edits will NOT flow back to `requestedSessionFile`.
+ */
+export type SessionAccessInfo = {
+  mode: 'read-write' | 'cloned' | 'blocked'
+  /** The file the user asked for. Null for brand-new sessions. */
+  requestedSessionFile: string | null
+  reasons: string[]
+  /** Ready-to-display explanations. */
+  messages: string[]
+}
+
 export type SessionReadyPayload = {
   cwd: string
   sessionFile: string | null
+  access: SessionAccessInfo
   sessionId: string | null
   sessionName: string | null
   model: {

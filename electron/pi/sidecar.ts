@@ -28,13 +28,13 @@ import { expandPromptTemplateText } from '../../src/lib/sessionPrompt'
 import { createOpenPiExtensionUIContext } from './extensionUiContext'
 import { fulfillExtensionUiPending } from './extensionUiPending'
 import { enforceIgnoreScriptsEnv } from './safePackageManager'
+import { defaultCloneDir, resolveSessionAccess, type SessionAccessDecision } from './sessionAccess'
 import {
-  acquireSessionLock,
   refreshSessionLock,
   releaseSessionLock,
   type SessionLockAcquireResult,
 } from './sessionLock'
-import { defaultBackupDir, preflightSessionFile } from './sessionPreflight'
+import { defaultBackupDir } from './sessionPreflight'
 import { isStaleExtensionCtxEvent, isStaleExtensionCtxMessage } from './staleCtx'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -434,25 +434,21 @@ function dropSessionLock(): void {
 }
 
 /**
- * Take the advisory owner lock for a session file and start its heartbeat.
+ * Adopt a lock already acquired by resolveSessionAccess() and start its
+ * heartbeat, so the lock we hold always matches the file we actually opened.
  *
- * Advisory only: terminal Pi doesn't participate, so a failure here is
- * reported to the user rather than enforced. Returning the result lets the
- * caller decide (open read-only / clone / take over) — currently we warn and
- * continue, which is honest about what this mechanism can actually do.
+ * The lock is advisory: terminal Pi doesn't participate. What resolves a real
+ * conflict is the access decision (detached copy), not this lock — see
+ * sessionAccess.ts and ADR-005 on not overstating what a mechanism enforces.
  */
-function claimSessionLock(sessionFile: string): SessionLockAcquireResult {
-  dropSessionLock()
-  const result = acquireSessionLock(sessionFile, { app: 'openpi' })
-  if (result.acquired) {
-    const heartbeat = setInterval(() => {
-      refreshSessionLock(result.lockPath)
-    }, SESSION_LOCK_HEARTBEAT_MS)
-    // Never hold the sidecar's event loop open just for a heartbeat.
-    heartbeat.unref?.()
-    _sessionLock = { lockPath: result.lockPath, heartbeat }
-  }
-  return result
+function adoptSessionLock(result: SessionLockAcquireResult | null): void {
+  if (!result?.acquired) return
+  const heartbeat = setInterval(() => {
+    refreshSessionLock(result.lockPath)
+  }, SESSION_LOCK_HEARTBEAT_MS)
+  // Never hold the sidecar's event loop open just for a heartbeat.
+  heartbeat.unref?.()
+  _sessionLock = { lockPath: result.lockPath, heartbeat }
 }
 
 async function startSession(
@@ -485,27 +481,39 @@ async function startSession(
   const settingsManager = workspaceTrusted
     ? fileSettingsManager
     : SettingsManager.inMemory(fileSettingsManager.getGlobalSettings())
-  // ADR-003: never open a shared session file blind. Check the format version
-  // (snapshotting before Pi's in-place migration) and take the advisory owner
-  // lock, surfacing both outcomes to the user instead of racing silently.
+  // ADR-003: never open a shared session file blind. resolveSessionAccess()
+  // runs the format-version preflight and takes the advisory owner lock, and
+  // returns what we may actually open — falling back to a detached copy when
+  // the requested file is unsafe to write, rather than detecting the conflict
+  // and then racing anyway.
+  let openPath = opts.sessionFile
+  let access: SessionAccessDecision | null = null
   if (opts.sessionFile) {
-    const preflight = preflightSessionFile(opts.sessionFile, {
+    dropSessionLock()
+    access = resolveSessionAccess(opts.sessionFile, {
       backupDir: defaultBackupDir(agentDir),
+      cloneDir: defaultCloneDir(agentDir),
     })
-    if (preflight.reason !== 'current') {
-      outputLine(preflight.decision === 'read-only' ? 'warn' : 'info', preflight.message)
+    for (const message of access.messages) {
+      outputLine(access.mode === 'read-write' ? 'info' : 'warn', message)
     }
-
-    const lock = claimSessionLock(opts.sessionFile)
-    if (!lock.acquired) {
-      outputLine('warn', lock.message)
+    if (access.mode === 'blocked') {
+      send({
+        type: 'session_error',
+        requestId: opts.requestId,
+        message: access.messages.join(' '),
+        code: 'session_access_blocked',
+      })
+      return
     }
+    openPath = access.openPath ?? opts.sessionFile
+    adoptSessionLock(access.lock)
   } else {
     dropSessionLock()
   }
 
-  let sessionManager = opts.sessionFile
-    ? SessionManager.open(opts.sessionFile, undefined, cwd)
+  let sessionManager = openPath
+    ? SessionManager.open(openPath, undefined, cwd)
     : SessionManager.create(cwd)
 
   if (opts.sessionFile && opts.forkEntryId) {
@@ -627,6 +635,17 @@ async function startSession(
         }
       : null,
     thinkingLevel: (session.thinkingLevel as string | undefined) ?? null,
+    // ADR-003: tell the renderer when it is NOT looking at the file the user
+    // asked for. Silently working in a detached copy would be worse than the
+    // race it prevents.
+    access: access
+      ? {
+          mode: access.mode,
+          requestedSessionFile: access.requestedPath,
+          reasons: access.reasons,
+          messages: access.messages,
+        }
+      : { mode: 'read-write', requestedSessionFile: null, reasons: [], messages: [] },
   }
 
   send({ type: 'session_ready', requestId: opts.requestId, payload })
