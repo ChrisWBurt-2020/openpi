@@ -11,12 +11,16 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+// pi-coding-agent does not re-export these auth types; they come straight from
+// pi-ai, which ModelRuntime.login() is defined against (see model-runtime.d.ts).
+import type { AuthEvent, AuthInteraction, AuthPrompt, AuthType } from '@earendil-works/pi-ai'
 import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent'
 import {
-  AuthStorage,
   createAgentSession,
   DefaultResourceLoader,
   ModelRegistry,
+  ModelRuntime,
+  readStoredCredential,
   SessionManager,
   SettingsManager,
 } from '@earendil-works/pi-coding-agent'
@@ -42,8 +46,8 @@ type SessionState = {
 }
 
 let state: SessionState | null = null
-let _authStorage: ReturnType<typeof AuthStorage.create> | null = null
-let _modelRegistry: ReturnType<typeof ModelRegistry.create> | null = null
+let _modelRuntime: ModelRuntime | null = null
+let _modelRegistry: ModelRegistry | null = null
 let _cachedResourceLoader: {
   cwd: string
   workspaceTrusted: boolean
@@ -94,23 +98,152 @@ function getAgentDir(): string {
   return path.join(os.homedir(), '.pi', 'agent')
 }
 
-function getAuthStorage() {
+/**
+ * Pi 0.80.8 (Breaking Changes) replaced CreateAgentSessionOptions.authStorage +
+ * modelRegistry with a single async `modelRuntime` option, and made AuthStorage
+ * a private implementation detail (no longer exported). ModelRuntime now owns
+ * credential storage + model catalogs together.
+ *
+ * This MUST stay a singleton for the sidecar's lifetime: extension-registered
+ * providers (added via runtime.registerProvider() during createAgentSession →
+ * bindCore) live on this instance. Recreating it drops them.
+ */
+async function getModelRuntime(): Promise<ModelRuntime> {
+  if (_modelRuntime) return _modelRuntime
   const agentDir = getAgentDir()
-  _authStorage ??= AuthStorage.create(path.join(agentDir, 'auth.json'))
-  return _authStorage
+  _modelRuntime = await ModelRuntime.create({
+    authPath: path.join(agentDir, 'auth.json'),
+    modelsPath: path.join(agentDir, 'models.json'),
+  })
+  return _modelRuntime
 }
 
-function getModelRegistry() {
-  _modelRegistry ??= ModelRegistry.create(getAuthStorage(), path.join(getAgentDir(), 'models.json'))
+/**
+ * ModelRegistry is now a thin synchronous compatibility facade over
+ * ModelRuntime (see @earendil-works/pi-coding-agent's model-registry.d.ts —
+ * "Synchronous compatibility facade exposed to extensions"). It holds no
+ * state beyond a runtime reference, so rebuilding it is cheap; the runtime
+ * itself is what must stay stable.
+ */
+async function getModelRegistry(): Promise<ModelRegistry> {
+  _modelRegistry ??= new ModelRegistry(await getModelRuntime())
   return _modelRegistry
 }
 
-function invalidateModelRegistry(): void {
-  if (_modelRegistry) {
-    // Refresh the existing instance so extension-registered providers
-    // (registered during createAgentSession → bindCore) are preserved.
-    // Nulling + recreating would lose them since extensions only run once.
-    _modelRegistry.refresh()
+async function invalidateModelRegistry(): Promise<void> {
+  // refresh() became async in 0.80.8 (models.json loading is async now).
+  // Every caller must await this before making synchronous registry reads.
+  await (await getModelRegistry()).refresh()
+}
+
+/**
+ * Preset-answer AuthInteraction for set_provider_key.
+ *
+ * ModelRuntime.login(providerId, 'api_key', interaction) is now the only
+ * persisted write path for an api-key credential (0.80.8 removed
+ * AuthStorage.set()). The renderer already collected the key via its own
+ * form before sending `set_provider_key`, so this interaction must not
+ * round-trip back to the renderer for it — it just hands the key straight
+ * back the first time ApiKeyAuth.login() calls prompt(), and no-ops on
+ * everything else (checks/notifications the built-in api-key flow may emit).
+ */
+function buildPresetKeyAuthInteraction(apiKey: string): AuthInteraction {
+  let answered = false
+  return {
+    async prompt(_prompt: AuthPrompt): Promise<string> {
+      // Only the first prompt should get the real key; a well-behaved
+      // api-key login() asks exactly once, but don't loop forever if it asks again.
+      if (answered) return ''
+      answered = true
+      return apiKey
+    },
+    notify(_event: AuthEvent): void {
+      // No renderer round-trip for the preset-key flow.
+    },
+  }
+}
+
+/**
+ * Fully interactive AuthInteraction for login_provider (OAuth device-code /
+ * browser flows, or an api-key flow that itself wants to prompt).
+ *
+ * Maps the new AuthInteraction callbacks onto the sidecar's existing
+ * `provider_login_event` IPC channel and the `_pendingOAuthPrompts`
+ * resolver map, so the renderer-side login UI (built against the old
+ * onAuth/onProgress/onPrompt/onSelect/onDeviceCode shape) keeps working
+ * without changes.
+ */
+function buildInteractiveAuthInteraction(requestId: string, providerId: string): AuthInteraction {
+  return {
+    async prompt(prompt: AuthPrompt): Promise<string> {
+      if (prompt.type === 'select') {
+        send({
+          type: 'provider_login_event',
+          requestId,
+          event: {
+            type: 'select',
+            message: prompt.message,
+            options: prompt.options.map((o) => ({ id: o.id, label: o.label })),
+          },
+        })
+      } else {
+        // 'text' | 'secret' | 'manual_code' all render as a single text prompt
+        // in the existing renderer UI; it doesn't distinguish secret masking
+        // today, which is a pre-existing limitation, not one this port adds.
+        send({
+          type: 'provider_login_event',
+          requestId,
+          event: { type: 'prompt', message: prompt.message, placeholder: prompt.placeholder },
+        })
+      }
+      return new Promise<string>((resolve, reject) => {
+        _pendingOAuthPrompts.set(providerId, (v) => resolve(v))
+        prompt.signal?.addEventListener('abort', () => {
+          _pendingOAuthPrompts.delete(providerId)
+          reject(new Error('Prompt aborted'))
+        })
+      })
+    },
+    notify(event: AuthEvent): void {
+      switch (event.type) {
+        case 'auth_url':
+          send({
+            type: 'provider_login_event',
+            requestId,
+            event: { type: 'auth', url: event.url, instructions: event.instructions },
+          })
+          break
+        case 'device_code':
+          send({
+            type: 'provider_login_event',
+            requestId,
+            event: {
+              type: 'device_code',
+              verificationUri: event.verificationUri,
+              userCode: event.userCode,
+              intervalSeconds: event.intervalSeconds,
+              expiresInSeconds: event.expiresInSeconds,
+            },
+          })
+          break
+        case 'progress':
+          send({
+            type: 'provider_login_event',
+            requestId,
+            event: { type: 'progress', message: event.message },
+          })
+          break
+        case 'info':
+          // No dedicated 'info' bucket in the existing renderer event union;
+          // surface it as progress rather than drop it silently.
+          send({
+            type: 'provider_login_event',
+            requestId,
+            event: { type: 'progress', message: event.message },
+          })
+          break
+      }
+    },
   }
 }
 
@@ -305,8 +438,7 @@ async function startSession(
   }
 
   const agentDir = getAgentDir()
-  const authStorage = getAuthStorage()
-  const modelRegistry = getModelRegistry()
+  const modelRuntime = await getModelRuntime()
   const fileSettingsManager = SettingsManager.create(cwd, agentDir)
   const workspaceTrusted = opts.workspaceTrusted ?? false
   const settingsManager = workspaceTrusted
@@ -329,8 +461,7 @@ async function startSession(
     cwd,
     agentDir,
     sessionManager,
-    authStorage,
-    modelRegistry,
+    modelRuntime,
     settingsManager,
     resourceLoader,
   })
@@ -614,7 +745,7 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
 
     case 'set_model': {
       if (!state) return
-      const model = getModelRegistry().find(cmd.provider, cmd.modelId)
+      const model = (await getModelRegistry()).find(cmd.provider, cmd.modelId)
       if (!model) return
       await state.session.setModel(model)
       break
@@ -865,7 +996,7 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
     }
 
     case 'get_models': {
-      const models = await getModelRegistry().getAvailable()
+      const models = await (await getModelRegistry()).getAvailable()
       const mapped = (
         models as Array<{
           id: string
@@ -943,17 +1074,20 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
     }
 
     case 'get_providers': {
-      const registry = getModelRegistry()
+      const registry = await getModelRegistry()
       const allModels = registry.getAll() as Array<{ provider: string }>
       const providerModelCounts = new Map<string, number>()
       for (const m of allModels) {
         providerModelCounts.set(m.provider, (providerModelCounts.get(m.provider) ?? 0) + 1)
       }
+      const authPath = path.join(getAgentDir(), 'auth.json')
       const providers = []
       for (const [providerId, count] of providerModelCounts) {
         const status = registry.getProviderAuthStatus(providerId)
         const displayName = registry.getProviderDisplayName(providerId)
-        const cred = getAuthStorage().get(providerId)
+        // readStoredCredential is the retained one-off *synchronous* read helper
+        // now that AuthStorage itself is a private implementation detail (0.80.8+).
+        const cred = readStoredCredential(providerId, authPath)
         const credentialType =
           cred?.type === 'oauth'
             ? 'oauth'
@@ -976,86 +1110,45 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
     }
 
     case 'set_provider_key': {
-      getAuthStorage().set(cmd.provider, { type: 'api_key', key: cmd.apiKey })
-      invalidateModelRegistry()
+      // AuthStorage.set() is gone in 0.80.8; ModelRuntime.login(providerId,
+      // 'api_key', interaction) is the persisted write path now. The key is
+      // already known (renderer collected it), so hand it back via a
+      // preset-answer interaction rather than round-tripping a prompt.
+      const runtime = await getModelRuntime()
+      await runtime.login(cmd.provider, 'api_key', buildPresetKeyAuthInteraction(cmd.apiKey))
+      await invalidateModelRegistry()
       break
     }
 
     case 'remove_provider_key': {
-      getAuthStorage().remove(cmd.provider)
-      invalidateModelRegistry()
+      // logout() is the persisted removal path. (removeRuntimeApiKey() is
+      // explicitly non-persisted per model-runtime.d.ts — runtime-only override.)
+      await (await getModelRuntime()).logout(cmd.provider)
+      await invalidateModelRegistry()
       break
     }
 
     case 'invalidate_models': {
-      invalidateModelRegistry()
+      await invalidateModelRegistry()
       break
     }
 
     case 'login_provider': {
       try {
-        await getAuthStorage().login(cmd.providerId, {
-          onAuth: ({ url, instructions }: { url: string; instructions?: string }) => {
-            send({
-              type: 'provider_login_event',
-              requestId: cmd.requestId,
-              event: { type: 'auth', url, instructions },
-            })
-          },
-          onProgress: (message: string) => {
-            send({
-              type: 'provider_login_event',
-              requestId: cmd.requestId,
-              event: { type: 'progress', message },
-            })
-          },
-          onPrompt: (prompt: {
-            message: string
-            placeholder?: string
-            allowEmpty?: boolean
-          }): Promise<string> => {
-            send({
-              type: 'provider_login_event',
-              requestId: cmd.requestId,
-              event: { type: 'prompt', ...prompt },
-            })
-            return new Promise<string>((resolve) => {
-              _pendingOAuthPrompts.set(cmd.providerId, resolve)
-            })
-          },
-          onSelect: (selectPrompt: {
-            message: string
-            options: { id: string; label: string }[]
-          }): Promise<string | undefined> => {
-            send({
-              type: 'provider_login_event',
-              requestId: cmd.requestId,
-              event: { type: 'select', ...selectPrompt },
-            })
-            return new Promise<string | undefined>((resolve) => {
-              _pendingOAuthPrompts.set(cmd.providerId, (v) => resolve(v || undefined))
-            })
-          },
-          onDeviceCode: (info: {
-            userCode: string
-            verificationUri: string
-            intervalSeconds?: number
-            expiresInSeconds?: number
-          }) => {
-            send({
-              type: 'provider_login_event',
-              requestId: cmd.requestId,
-              event: {
-                type: 'device_code',
-                verificationUri: info.verificationUri,
-                userCode: info.userCode,
-                intervalSeconds: info.intervalSeconds,
-                expiresInSeconds: info.expiresInSeconds,
-              },
-            })
-          },
-        })
-        invalidateModelRegistry()
+        const runtime = await getModelRuntime()
+        // sidecarTypes.ts's login_provider command doesn't carry an AuthType
+        // (pre-dates the 0.80.8 login() signature). Auto-detect from the
+        // provider's registered auth methods, preferring OAuth when a
+        // provider offers both — matches prior UX where OAuth was the primary
+        // "login" action and api-key was a separate "set key" field.
+        const provider = runtime.getProvider(cmd.providerId)
+        const authType: AuthType = provider?.auth.oauth ? 'oauth' : 'api_key'
+        await runtime.login(
+          cmd.providerId,
+          authType,
+          buildInteractiveAuthInteraction(cmd.requestId, cmd.providerId)
+        )
+        await invalidateModelRegistry()
         send({ type: 'provider_login_event', requestId: cmd.requestId, event: { type: 'success' } })
       } catch (err) {
         send({
@@ -1068,8 +1161,8 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
     }
 
     case 'logout_provider': {
-      getAuthStorage().logout(cmd.providerId)
-      invalidateModelRegistry()
+      await (await getModelRuntime()).logout(cmd.providerId)
+      await invalidateModelRegistry()
       break
     }
 
