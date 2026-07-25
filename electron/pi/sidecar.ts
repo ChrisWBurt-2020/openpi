@@ -28,6 +28,13 @@ import { expandPromptTemplateText } from '../../src/lib/sessionPrompt'
 import { createOpenPiExtensionUIContext } from './extensionUiContext'
 import { fulfillExtensionUiPending } from './extensionUiPending'
 import { enforceIgnoreScriptsEnv } from './safePackageManager'
+import {
+  acquireSessionLock,
+  refreshSessionLock,
+  releaseSessionLock,
+  type SessionLockAcquireResult,
+} from './sessionLock'
+import { defaultBackupDir, preflightSessionFile } from './sessionPreflight'
 import { isStaleExtensionCtxEvent, isStaleExtensionCtxMessage } from './staleCtx'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -48,6 +55,8 @@ type SessionState = {
 let state: SessionState | null = null
 let _modelRuntime: ModelRuntime | null = null
 let _modelRegistry: ModelRegistry | null = null
+/** Advisory owner lock for the session file we currently have open (ADR-003). */
+let _sessionLock: { lockPath: string; heartbeat: NodeJS.Timeout } | null = null
 let _cachedResourceLoader: {
   cwd: string
   workspaceTrusted: boolean
@@ -414,6 +423,38 @@ async function emitSessionShutdown(
   }
 }
 
+/** Heartbeat cadence. Must be well under sessionLock's DEFAULT_STALE_MS. */
+const SESSION_LOCK_HEARTBEAT_MS = 30_000
+
+function dropSessionLock(): void {
+  if (!_sessionLock) return
+  clearInterval(_sessionLock.heartbeat)
+  releaseSessionLock(_sessionLock.lockPath)
+  _sessionLock = null
+}
+
+/**
+ * Take the advisory owner lock for a session file and start its heartbeat.
+ *
+ * Advisory only: terminal Pi doesn't participate, so a failure here is
+ * reported to the user rather than enforced. Returning the result lets the
+ * caller decide (open read-only / clone / take over) — currently we warn and
+ * continue, which is honest about what this mechanism can actually do.
+ */
+function claimSessionLock(sessionFile: string): SessionLockAcquireResult {
+  dropSessionLock()
+  const result = acquireSessionLock(sessionFile, { app: 'openpi' })
+  if (result.acquired) {
+    const heartbeat = setInterval(() => {
+      refreshSessionLock(result.lockPath)
+    }, SESSION_LOCK_HEARTBEAT_MS)
+    // Never hold the sidecar's event loop open just for a heartbeat.
+    heartbeat.unref?.()
+    _sessionLock = { lockPath: result.lockPath, heartbeat }
+  }
+  return result
+}
+
 async function startSession(
   cwd: string,
   opts: {
@@ -444,6 +485,25 @@ async function startSession(
   const settingsManager = workspaceTrusted
     ? fileSettingsManager
     : SettingsManager.inMemory(fileSettingsManager.getGlobalSettings())
+  // ADR-003: never open a shared session file blind. Check the format version
+  // (snapshotting before Pi's in-place migration) and take the advisory owner
+  // lock, surfacing both outcomes to the user instead of racing silently.
+  if (opts.sessionFile) {
+    const preflight = preflightSessionFile(opts.sessionFile, {
+      backupDir: defaultBackupDir(agentDir),
+    })
+    if (preflight.reason !== 'current') {
+      outputLine(preflight.decision === 'read-only' ? 'warn' : 'info', preflight.message)
+    }
+
+    const lock = claimSessionLock(opts.sessionFile)
+    if (!lock.acquired) {
+      outputLine('warn', lock.message)
+    }
+  } else {
+    dropSessionLock()
+  }
+
   let sessionManager = opts.sessionFile
     ? SessionManager.open(opts.sessionFile, undefined, cwd)
     : SessionManager.create(cwd)
@@ -1192,6 +1252,9 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
         state.session.dispose()
         state = null
       }
+      // Release the advisory owner lock on clean shutdown so the next opener
+      // doesn't have to wait out the staleness window (ADR-003).
+      dropSessionLock()
       send({ type: 'stopped' })
       setTimeout(() => process.exit(0), 100)
       break
