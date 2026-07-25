@@ -27,6 +27,7 @@ import { canonicalizePath, displayNameForPath, toIso, truncate } from './session
 import { runMigrations } from './sessionMigration'
 import {
   deleteMissingSessions as _deleteMissingSessions,
+  getLastSessionForWorkspace as _getLastSessionForWorkspace,
   getLastWorkspace as _getLastWorkspace,
   getPref as _getPref,
   isWorkspaceTrusted as _isWorkspaceTrusted,
@@ -82,6 +83,9 @@ export class SessionIndexStore {
   }
   getLastWorkspace(): string | null {
     return _getLastWorkspace(this.db)
+  }
+  getLastSessionForWorkspace(cwd: string): string | null {
+    return _getLastSessionForWorkspace(this.db, cwd)
   }
   listWorkspaces(): WorkspaceInfo[] {
     return _listWorkspaces(this.db)

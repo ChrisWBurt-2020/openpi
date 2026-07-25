@@ -91,6 +91,27 @@ export function getLastWorkspace(db: Database.Database): string | null {
   return row?.path ?? null
 }
 
+/**
+ * Most recently updated session for a workspace — what the app reopens on
+ * restart. Sessions with no messages are skipped: resuming an empty session
+ * is indistinguishable from starting a new one, and picking one would hide
+ * the real last conversation behind it.
+ */
+export function getLastSessionForWorkspace(
+  db: Database.Database,
+  workspacePath: string
+): string | null {
+  const row = db
+    .prepare(`
+    select path from sessions
+    where workspace_path = ? and message_count > 0
+    order by updated_at desc
+    limit 1
+  `)
+    .get(canonicalizePath(workspacePath)) as { path: string } | undefined
+  return row?.path ?? null
+}
+
 export function listWorkspaces(db: Database.Database): WorkspaceInfo[] {
   const rows = db
     .prepare(`

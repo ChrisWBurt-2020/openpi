@@ -52,6 +52,7 @@ import {
   setSessionHostMainWindow,
   setSessionHostSessionIndex,
   showDeferredWorkspace,
+  startSession,
 } from './session/sessionHost'
 import { SessionIndexStore } from './session/sessionIndex'
 
@@ -201,6 +202,7 @@ function createWindow(): void {
     getSessionIndex: () => sessionIndex,
     ensurePiSidecarStarted,
     showDeferredWorkspace,
+    resumeSession: (cwd: string, sessionFile: string) => startSession(cwd, { sessionFile }),
     refreshSessionIndex,
     onClosed: () => {
       mainWindow = null

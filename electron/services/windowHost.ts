@@ -1,8 +1,12 @@
+import fs from 'node:fs'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import type { MenuItemConstructorOptions } from 'electron'
-import { BrowserWindow, Menu } from 'electron'
+import { BrowserWindow, Menu, shell } from 'electron'
 import { IPC } from '../../src/lib/ipc'
+import { resolveBootTarget } from '../session/bootTarget'
 import type { SessionIndexStore } from '../session/sessionIndex'
+import { classifyNavigation } from './navigationPolicy'
 import type { PtyHost } from './ptyHost'
 import { appIconPath } from './shellEnv'
 import { attachWindowStateSaver, loadWindowState } from './windowState'
@@ -15,8 +19,33 @@ interface CreateWindowOptions {
   getSessionIndex: () => SessionIndexStore | null
   ensurePiSidecarStarted: () => unknown
   showDeferredWorkspace: (workspacePath: string) => void
+  /** Reopen a specific session on boot. See resolveBootTarget(). */
+  resumeSession: (cwd: string, sessionFile: string) => Promise<void>
   refreshSessionIndex: () => Promise<void>
   onClosed: () => void
+}
+
+/**
+ * Keep links from replacing the app.
+ *
+ * A plain <a href> click navigates the window away from the UI, and there is
+ * no back button or Back menu item to return — the app has to be killed. This
+ * routes anything that isn't the app itself to the user's real browser.
+ */
+function applyNavigationPolicy(window: BrowserWindow, appUrl: string | null): void {
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (classifyNavigation(url, appUrl) === 'external') void shell.openExternal(url)
+    // Never let the renderer spawn its own chrome-less windows.
+    return { action: 'deny' }
+  })
+
+  window.webContents.on('will-navigate', (event, url) => {
+    const decision = classifyNavigation(url, appUrl)
+    if (decision === 'allow') return
+    // Anything else must not replace the app window.
+    event.preventDefault()
+    if (decision === 'external') void shell.openExternal(url)
+  })
 }
 
 function buildAppMenu() {
@@ -78,11 +107,16 @@ export function createMainWindow(options: CreateWindowOptions): BrowserWindow {
     }
   })
 
+  let appUrl: string | null = null
   if (process.env.ELECTRON_RENDERER_URL) {
-    mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
+    appUrl = process.env.ELECTRON_RENDERER_URL
+    mainWindow.loadURL(appUrl)
   } else {
-    mainWindow.loadFile(path.resolve(options.currentDir, '../renderer/index.html'))
+    const indexPath = path.resolve(options.currentDir, '../renderer/index.html')
+    appUrl = pathToFileURL(indexPath).toString()
+    mainWindow.loadFile(indexPath)
   }
+  applyNavigationPolicy(mainWindow, appUrl)
 
   mainWindow.webContents.once('did-finish-load', () => {
     options.ensurePiSidecarStarted()
@@ -90,9 +124,24 @@ export function createMainWindow(options: CreateWindowOptions): BrowserWindow {
 
     mainWindow.webContents.send(IPC.SESSION_INDEX_UPDATED)
 
-    const lastWorkspace = options.getSessionIndex()?.getLastWorkspace()
-    if (lastWorkspace) {
-      options.showDeferredWorkspace(lastWorkspace)
+    const index = options.getSessionIndex()
+    const lastWorkspace = index?.getLastWorkspace() ?? null
+    const target = resolveBootTarget({
+      lastWorkspace,
+      lastSessionFile: lastWorkspace
+        ? (index?.getLastSessionForWorkspace(lastWorkspace) ?? null)
+        : null,
+      sessionFileExists: (p) => fs.existsSync(p),
+    })
+
+    if (target.kind === 'session') {
+      // Reopen the conversation the user was actually in. Falling back to the
+      // workspace keeps a stale index row from wedging startup entirely.
+      void options.resumeSession(target.cwd, target.sessionFile).catch(() => {
+        options.showDeferredWorkspace(target.cwd)
+      })
+    } else if (target.kind === 'workspace') {
+      options.showDeferredWorkspace(target.cwd)
     } else {
       void options.refreshSessionIndex()
     }
