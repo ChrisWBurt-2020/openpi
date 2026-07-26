@@ -712,6 +712,9 @@ export function useOpenPiSession() {
     get messages() {
       return messages()
     },
+    get activeThreadId() {
+      return activeThreadId()
+    },
     get isStreaming() {
       return isStreaming()
     },

@@ -7,10 +7,27 @@ export const runsApi = {
     ipcRenderer.invoke(IPC.RUN_GET, { runId, expectedStateVersion: 0 }),
   listRuns: (workspacePath?: string): Promise<RunState[]> =>
     ipcRenderer.invoke(IPC.RUN_LIST, { workspacePath }),
-  pauseRun: (runId: string, expectedStateVersion: number): Promise<RunState> =>
-    ipcRenderer.invoke(IPC.RUN_PAUSE, { runId, expectedStateVersion }),
+  pauseRun: (
+    runId: string,
+    mode: 'now' | 'after_tool',
+    expectedStateVersion: number
+  ): Promise<RunState> => ipcRenderer.invoke(IPC.RUN_PAUSE, { runId, mode, expectedStateVersion }),
   resumeRun: (runId: string, expectedStateVersion: number): Promise<RunState> =>
     ipcRenderer.invoke(IPC.RUN_RESUME, { runId, expectedStateVersion }),
   cancelRun: (runId: string, expectedStateVersion: number): Promise<RunState> =>
     ipcRenderer.invoke(IPC.RUN_CANCEL, { runId, expectedStateVersion }),
+  answerRunInput: (
+    runId: string,
+    answer: string,
+    expectedStateVersion: number
+  ): Promise<RunState> =>
+    ipcRenderer.invoke(IPC.RUN_ANSWER_INPUT, { runId, answer, expectedStateVersion }),
+  acceptRunReview: (runId: string, expectedStateVersion: number): Promise<RunState> =>
+    ipcRenderer.invoke(IPC.RUN_ACCEPT_REVIEW, { runId, expectedStateVersion }),
+  requestRunChanges: (
+    runId: string,
+    text: string,
+    expectedStateVersion: number
+  ): Promise<RunState> =>
+    ipcRenderer.invoke(IPC.RUN_REQUEST_CHANGES, { runId, text, expectedStateVersion }),
 } as const

@@ -1,10 +1,11 @@
 import type { InsightMode } from '../../src/lib/insights'
-import type { ComposerIntent, RunCheckpoint, RunInput, RunOutcome } from '../../src/lib/runs'
+import type { ComposerIntent } from '../../src/lib/runs'
 import type {
   RemoteWorkspaceDescriptor,
   WorkspaceResult,
   WorkspaceStream,
 } from '../remote/workspaceProtocol'
+import type { RunControlEvent } from './runExtension'
 
 /**
  * piSidecarTypes.ts — Shared types for the Pi SDK sidecar process.
@@ -110,25 +111,7 @@ export type SidecarMessage =
   | { type: 'output_append'; line: { level: string; text: string; ts: number } }
   | {
       type: 'run_control'
-      event:
-        | {
-            type: 'outcome'
-            context: { id: string; epoch: number; contractVersion: number }
-            payload: RunOutcome
-            toolCallId: string
-          }
-        | {
-            type: 'input'
-            context: { id: string; epoch: number; contractVersion: number }
-            payload: RunInput
-            toolCallId: string
-          }
-        | {
-            type: 'checkpoint'
-            context: { id: string; epoch: number; contractVersion: number }
-            payload: RunCheckpoint
-            toolCallId: string
-          }
+      event: RunControlEvent
     }
   | {
       type: 'extension_ui_request'

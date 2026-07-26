@@ -43,6 +43,12 @@ class MemoryRunStore {
     )
   }
 
+  releaseLease(runId: string): void {
+    for (const entry of this.states.values()) {
+      if (entry.state.id === runId) entry.checkoutId = `released:${runId}`
+    }
+  }
+
   scheduleDispatch(continuationId: string): boolean {
     if (this.dispatches.has(continuationId)) return false
     this.dispatches.add(continuationId)

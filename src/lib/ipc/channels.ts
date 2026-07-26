@@ -63,6 +63,9 @@ export const IPC = {
   RUN_PAUSE: 'openpi:run-pause',
   RUN_RESUME: 'openpi:run-resume',
   RUN_CANCEL: 'openpi:run-cancel',
+  RUN_ANSWER_INPUT: 'openpi:run-answer-input',
+  RUN_ACCEPT_REVIEW: 'openpi:run-accept-review',
+  RUN_REQUEST_CHANGES: 'openpi:run-request-changes',
 
   // PTY terminal (renderer → main)
   PTY_CREATE: 'openpi:pty-create',

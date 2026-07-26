@@ -20,6 +20,7 @@ export type RunControlEvent =
   | { type: 'outcome'; context: RunContext; payload: RunOutcome; toolCallId: string }
   | { type: 'input'; context: RunContext; payload: RunInput; toolCallId: string }
   | { type: 'checkpoint'; context: RunContext; payload: RunCheckpoint; toolCallId: string }
+  | { type: 'continuation_ack'; context: RunContext; continuationId: string }
 
 const OUTCOME = Type.Object({
   status: Type.Union([Type.Literal('completed'), Type.Literal('blocked')]),
@@ -115,21 +116,41 @@ export function createRunExtension(
   return {
     name: 'openpi-run-continuity',
     factory: (pi) => {
+      const dispatched = new Set<string>()
+      pi.on('session_start', (_event, ctx) => {
+        for (const entry of ctx.sessionManager.getEntries()) {
+          const continuationId = continuationIdFromEntry(entry)
+          if (continuationId) dispatched.add(continuationId)
+        }
+      })
       pi.registerCommand('openpi-run-continue', {
         description: 'Internal OpenPi Run continuation dispatch.',
         handler: async () => {
           const context = getContext()
-          if (!context) return
+          const continuationId = context?.continuationId
+          if (!context || !continuationId) return
+          if (dispatched.has(continuationId)) {
+            emit({ type: 'continuation_ack', context, continuationId })
+            return
+          }
           pi.sendMessage(
             {
               customType: 'openpi-run-continuation',
               content:
                 '[OpenPi Run continuation] Continue the active task. Reinspect current state, do not repeat completed work, and finish, block, or request input.',
               display: false,
-              details: { continuationId: context.continuationId ?? null, runId: context.id },
+              details: { continuationId, runId: context.id, runEpoch: context.epoch },
             },
             { deliverAs: 'followUp', triggerTurn: true }
           )
+          pi.appendEntry('openpi-run-dispatch', {
+            continuationId,
+            runId: context.id,
+            runEpoch: context.epoch,
+            contractVersion: context.contractVersion,
+          })
+          dispatched.add(continuationId)
+          emit({ type: 'continuation_ack', context, continuationId })
         },
       })
       pi.on('before_agent_start', (event) => {
@@ -204,4 +225,24 @@ export function createRunExtension(
       })
     },
   }
+}
+
+function continuationIdFromEntry(entry: unknown): string | null {
+  if (!entry || typeof entry !== 'object') return null
+  const record = entry as Record<string, unknown>
+  const data = record.data
+  if (record.type === 'custom' && record.customType === 'openpi-run-dispatch') {
+    return continuationIdFromData(data)
+  }
+  if (record.type !== 'custom_message') return null
+  const message = record.message
+  if (!message || typeof message !== 'object') return null
+  const details = (message as Record<string, unknown>).details
+  return continuationIdFromData(details)
+}
+
+function continuationIdFromData(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null
+  const continuationId = (value as Record<string, unknown>).continuationId
+  return typeof continuationId === 'string' && continuationId.length > 0 ? continuationId : null
 }

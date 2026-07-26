@@ -1,7 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import Database from 'better-sqlite3'
-import { type RunState, runStateSchema } from '../../src/lib/runs'
+import type { RunState } from '../../src/lib/runs'
+import { migrateRunState } from './state'
 
 export class RunStore {
   private readonly db: Database.Database
@@ -17,9 +18,6 @@ export class RunStore {
         lifecycle text not null, state_json text not null, updated_at text not null
       );
       drop index if exists idx_runs_checkout_active;
-      create unique index if not exists idx_runs_checkout_active
-        on runs(checkout_id)
-        where lifecycle in ('starting', 'active', 'continuation_queued', 'pausing', 'reconnecting');
       create table if not exists run_events (
         run_id text not null, sequence integer not null, type text not null,
         payload_json text not null, created_at text not null,
@@ -29,6 +27,12 @@ export class RunStore {
         continuation_id text primary key, run_id text not null,
         dispatched_at text, acknowledged_at text
       );
+      create table if not exists run_checkout_leases (
+        checkout_id text primary key, run_id text not null, run_epoch integer not null,
+        updated_at text not null
+      );
+      create table if not exists run_meta (key text primary key, value text not null);
+      insert or replace into run_meta(key, value) values ('schema_version', '2');
     `)
   }
 
@@ -54,6 +58,16 @@ export class RunStore {
           JSON.stringify(state),
           now
         )
+      if (state.lifecycle === 'terminal') {
+        this.db.prepare('delete from run_checkout_leases where run_id = ?').run(state.id)
+      } else {
+        this.db
+          .prepare(`insert into run_checkout_leases(checkout_id, run_id, run_epoch, updated_at)
+            values (?, ?, ?, ?)
+            on conflict(checkout_id) do update set run_epoch=excluded.run_epoch, updated_at=excluded.updated_at
+            where run_checkout_leases.run_id = excluded.run_id`)
+          .run(checkoutId, state.id, state.runEpoch, now)
+      }
       this.db
         .prepare(
           'insert into run_events(run_id, sequence, type, payload_json, created_at) values (?, ?, ?, ?, ?)'
@@ -95,20 +109,44 @@ export class RunStore {
     return Boolean(
       this.db
         .prepare(
-          "select 1 from runs where checkout_id = ? and lifecycle in ('starting', 'active', 'continuation_queued', 'pausing', 'reconnecting') limit 1"
+          "select 1 from run_checkout_leases lease join runs on runs.id = lease.run_id where lease.checkout_id = ? and runs.lifecycle != 'terminal' limit 1"
         )
         .get(checkoutId)
     )
   }
 
-  /** A local Pi sidecar cannot survive an app restart, so it cannot retain a write lease. */
+  /** No sidecar is confirmed at startup, so recovery always requires an explicit Resume. */
   releaseRestartedRuns(): void {
+    const rows = this.db.prepare('select id, state_json from runs').all() as Array<{
+      id: string
+      state_json: string
+    }>
     const now = new Date().toISOString()
-    this.db
-      .prepare(
-        "update runs set lifecycle = 'paused', state_json = json_set(state_json, '$.lifecycle', 'paused', '$.phase', null, '$.activeTools', json('{}')), updated_at = ? where lifecycle in ('starting', 'active', 'continuation_queued', 'pausing', 'reconnecting')"
-      )
-      .run(now)
+    const tx = this.db.transaction(() => {
+      for (const row of rows) {
+        const state = this.parse(row.state_json)
+        if (!state || state.lifecycle === 'terminal') continue
+        const paused: RunState = {
+          ...state,
+          lifecycle: 'paused',
+          phase: null,
+          activeTurnId: null,
+          activeTools: {},
+          recoveryNotice: 'OpenPi restarted. Resume explicitly after inspecting the workspace.',
+          updatedAt: now,
+          lastEventAt: now,
+        }
+        this.db
+          .prepare('update runs set lifecycle = ?, state_json = ?, updated_at = ? where id = ?')
+          .run(paused.lifecycle, JSON.stringify(paused), now, row.id)
+      }
+      this.db.prepare('delete from run_checkout_leases').run()
+    })
+    tx()
+  }
+
+  releaseLease(runId: string): void {
+    this.db.prepare('delete from run_checkout_leases where run_id = ?').run(runId)
   }
 
   scheduleDispatch(continuationId: string, runId: string): boolean {
@@ -128,8 +166,7 @@ export class RunStore {
 
   private parse(value: string): RunState | null {
     try {
-      const parsed = runStateSchema.safeParse(JSON.parse(value))
-      return parsed.success ? parsed.data : null
+      return migrateRunState(JSON.parse(value))
     } catch {
       return null
     }

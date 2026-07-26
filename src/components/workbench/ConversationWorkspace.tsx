@@ -16,6 +16,7 @@ import { FilePreviewPane } from '../FilePreviewPane'
 import { FileTabBar } from '../FileTabBar'
 import { GitHistoryTab } from '../git/GitHistoryTab'
 import { ResizeHandle } from '../ResizeHandle'
+import { RunCard } from '../RunCard'
 import { ReviewPane } from '../review/ReviewPane'
 import { SubagentFileWidget, TodoListTray } from '../SubagentFileWidget'
 import { SubagentWidget } from '../SubagentWidget'
@@ -91,7 +92,12 @@ export function ConversationWorkspace(props: ConversationWorkspaceProps) {
       document.querySelector<HTMLTextAreaElement>('.composer-textarea')?.focus()
     }
     document.addEventListener('openpi:ask-insight', askFromInsight)
-    onCleanup(() => document.removeEventListener('openpi:ask-insight', askFromInsight))
+    const openReview = () => props.onOpenReviewTab()
+    document.addEventListener('openpi:open-review', openReview)
+    onCleanup(() => {
+      document.removeEventListener('openpi:ask-insight', askFromInsight)
+      document.removeEventListener('openpi:open-review', openReview)
+    })
   })
 
   createEffect(() => {
@@ -321,6 +327,8 @@ export function ConversationWorkspace(props: ConversationWorkspaceProps) {
               </div>
             )}
           </Show>
+
+          <RunCard threadId={props.session.activeThreadId} workspacePath={props.cwd} />
 
           <Composer
             input={props.session.input}

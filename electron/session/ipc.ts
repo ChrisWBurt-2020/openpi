@@ -77,7 +77,13 @@ interface SessionsIpcDeps {
   refreshSessionIndex: () => Promise<void>
   normalizeSessionReady: (payload: SessionReady) => SessionReady
   applySessionValues: (ready: SessionReady) => void
-  startRun?: (input: { threadId: string; sessionPath: string | null; workspacePath: string }) => {
+  startRun?: (input: {
+    threadId: string
+    sessionPath: string | null
+    workspacePath: string
+    text: string
+    contextRefs: string[]
+  }) => {
     id: string
     contractVersion: number
   }
@@ -151,6 +157,8 @@ export function registerSessionsIpc(deps: SessionsIpcDeps): void {
           threadId: session.threadId,
           sessionPath: session.sessionFile,
           workspacePath: session.cwd,
+          text,
+          contextRefs: contextPrefix ? [contextPrefix] : [],
         })
       } catch (error) {
         if (error instanceof CheckoutBusyError) {
