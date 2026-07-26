@@ -35,6 +35,7 @@ import { bundledThemePaths } from '../services/bundledThemes'
 import { createOpenPiExtensionUIContext } from './extensionUiContext'
 import { fulfillExtensionUiPending } from './extensionUiPending'
 import { createInsightsExtension } from './insightsExtension'
+import { unwrapSidecarIncoming } from './messageEnvelope'
 import { createRunExtension, type RunContext } from './runExtension'
 import { enforceIgnoreScriptsEnv } from './safePackageManager'
 import { defaultCloneDir, resolveSessionAccess, type SessionAccessDecision } from './sessionAccess'
@@ -757,10 +758,7 @@ async function startSession(
 // ─── Command handler ────────────────────────────────────────────────────────────
 
 parentPort.on('message', (message) => {
-  const incoming =
-    message && typeof message === 'object' && 'data' in message
-      ? (message as { data: unknown }).data
-      : message
+  const incoming = unwrapSidecarIncoming(message)
   if (
     incoming &&
     typeof incoming === 'object' &&
