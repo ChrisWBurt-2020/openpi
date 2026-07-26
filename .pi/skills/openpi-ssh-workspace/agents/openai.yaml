@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenPi SSH Workspace"
+  short_description: "Diagnose remote workspace transport safely"
+  default_prompt: "Use $openpi-ssh-workspace to diagnose and stabilize an OpenPi SSH Workspace without falling back to local files."

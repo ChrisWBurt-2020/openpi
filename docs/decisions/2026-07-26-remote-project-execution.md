@@ -31,3 +31,14 @@ SSH Workspace tool routing currently covers Pi's read, write, edit, list, find, 
 SSH Workspace requests are validated at both the sidecar and Electron-main boundary. They use bounded metadata/file deadlines, a reusable SFTP channel for each live SSH profile, and a fixed remote shell bootstrap whose workspace path and command arrive through stdin rather than SSH environment requests. Connection loss, sidecar replacement, and Stop Agent reject all pending transport requests; no request may remain indefinitely open.
 
 Only a narrow, read-only local resource allowlist is available to the local Pi sidecar for its own user-installed Pi/OpenPi skills and prompts. It exists so resource loading can read exact local guidance such as a `SKILL.md`. Workspace reads and every mutation remain remote-only for an SSH Workspace; a Windows file is never used as a fallback for a remote project path.
+
+## 2026-07-26 stabilization checkpoint
+
+The initial SSH Workspace slice exposed four failures that must remain covered:
+
+- **Git is enrichment, not filesystem authority.** An accessible non-Git folder must retain its file tree when Git returns “not a repository.”
+- **Remote prompts name POSIX paths while the isolated local sidecar uses a synthetic Windows cwd.** Map an in-root remote absolute path deliberately; reject lexical or resolved escapes rather than treating every absolute path as a Windows fallback.
+- **Large trees must not recurse over SFTP.** Use a fixed, root-contained remote `find` command with ignored heavy directories and a result limit. Reserve the reusable SFTP channel for structured file operations.
+- **A successful workspace result contains `data`.** The sidecar must distinguish that direct Node-fork payload from an Electron utility-process `MessageEvent` envelope; otherwise main can complete SSH work while Pi waits until timeout.
+
+All workspace requests need a correlation ID and terminal result. Main-side timeouts reset the stalled SSH client, while writes and arbitrary commands are never silently replayed. Diagnose request delivery before blaming host availability: a main log showing “completed” proves that SSH is not the current fault boundary.

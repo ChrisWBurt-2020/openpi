@@ -5,3 +5,5 @@ OpenPi keeps a bounded main-process journal for the most recent lifecycle and wo
 The export is intentionally redacted. It does not include prompt text, file contents, provider headers, credentials, API keys, cookies, or complete shell commands. Paths are replaced with stable placeholders where possible.
 
 Use the Diagnostics export after a failed prompt, missing tool result, stopped SSH Workspace request, sidecar crash, or unexpected Run state. Include the diagnostic ID shown by the affected error when reporting a problem. Non-Git folders are expected capability states: their filesystem tree remains available and Git metadata is simply absent.
+
+For SSH Workspace failures, compare the same request ID at each hop: sidecar request received, main operation started, remote operation completed/failed, and sidecar result delivery. A main-side “completed” line with a Pi timeout indicates an IPC/result-projection problem, not an unavailable VPS. The Electron terminal emits concise `[openpi:ssh-workspace]` lifecycle lines without prompts, credentials, file contents, or full shell commands.
