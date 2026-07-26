@@ -514,6 +514,16 @@ export function useOpenPiSession() {
     const threadId = activeThreadId()
     if (!promptPayload.text || !r || !threadId) return
 
+    if (!contextPrefix && isRunStatusAlias(rawInput)) {
+      const runs = await window.openpi.listRuns(r.cwd)
+      if (runs.some((run) => run.threadId === threadId)) {
+        setInput('')
+        if (textareaEl) textareaEl.style.height = 'auto'
+        document.dispatchEvent(new Event('openpi:focus-run'))
+        return
+      }
+    }
+
     setInput('')
     if (textareaEl) textareaEl.style.height = 'auto'
     remoteSync.markLocalActivity()
@@ -930,4 +940,20 @@ export function useOpenPiSession() {
     parentStack,
     isSubSession,
   }
+}
+
+function isRunStatusAlias(value: string): boolean {
+  return new Set([
+    '/status',
+    'status',
+    'status?',
+    'are you still working',
+    'are you still working?',
+    'still working',
+    'still working?',
+    'what is the status',
+    "what's the status",
+    'progress',
+    'progress?',
+  ]).has(value.trim().toLowerCase())
 }

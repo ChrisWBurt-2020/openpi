@@ -23,6 +23,7 @@ export function RunCard(props: RunCardProps) {
   const [answer, setAnswer] = createSignal('')
   const [request, setRequest] = createSignal('')
   const [error, setError] = createSignal<string | null>(null)
+  let cardElement: HTMLElement | undefined
 
   const refresh = async () => {
     if (!props.threadId || !props.workspacePath) return setRun(null)
@@ -35,7 +36,12 @@ export function RunCard(props: RunCardProps) {
     const unsubscribe = window.openpi.onRunChanged((next) => {
       if (next.threadId === props.threadId) setRun(next)
     })
-    onCleanup(unsubscribe)
+    const focus = () => cardElement?.focus()
+    document.addEventListener('openpi:focus-run', focus)
+    onCleanup(() => {
+      unsubscribe()
+      document.removeEventListener('openpi:focus-run', focus)
+    })
   })
   createEffect(() => {
     props.threadId
@@ -55,7 +61,12 @@ export function RunCard(props: RunCardProps) {
   return (
     <Show when={run()} keyed>
       {(active) => (
-        <section class="run-card" aria-label="Experimental Run status">
+        <section
+          ref={cardElement}
+          class="run-card"
+          aria-label="Experimental Run status"
+          tabIndex={-1}
+        >
           <header>
             <span class="run-card-title">
               <LoaderCircle
