@@ -26,6 +26,7 @@ OpenPi is a **human-enabling workbench** for [Pi](https://pi.dev) (`@earendil-wo
 - Themes: bundled dark-only **Heron Flight** (celestial indigo/cyan) and **Natural Focus** (forest/gold), with Pi-compatible definitions, renderer atmosphere, reduced-motion and forced-colors fallbacks, and live terminal/editor palette refresh.
 - **Remote projects:** Add Project distinguishes **SSH Workspace** (local Pi/model catalog, remote tools) from **Persistent Remote Runner** (VPS Pi/runtime). New projects default to SSH Workspace; existing projects remain runners. The project rail and top bar identify the active execution source.
 - **Workspace stabilization (unreleased):** local non-Git folders retain their filesystem tree without Git metadata; Pi event/statistics failures are isolated from the conversation; SSH Workspace transport has validated requests, bounded deadlines, SFTP reuse for structured operations, fixed-shell file discovery, cancellation, correlated lifecycle logs, and direct-result envelope handling.
+- **Durable Runs (experimental):** Ask/Run intent, persisted Run state, checkout ownership, `agent_settled` handling, and control tools are staged, but recovery acknowledgement, observed review evidence, full status/review UI, and local/SSH smoke verification remain incomplete. Ask is the supported path while the workspace stabilization gate is open.
  - Agent review: unified Review tab now has a source dropdown for `Git changes` vs `Last turn changes`; last-turn mode uses agent snapshots, file accordions, proper diff rendering, Keep/Revert/Revert all, coalesces repeated edits per file, and supports diff line comments with hover `+`, content-row multi-select, saved annotations, composer chips, and structured `<file_comment>` prompt context.
  - CI: PR/main checks; tag-triggered beta releases (macOS/Windows/Linux). **Signing/notarization not configured.**
 
@@ -42,6 +43,7 @@ OpenPi is a **human-enabling workbench** for [Pi](https://pi.dev) (`@earendil-wo
 - Packaging via `electron-builder`; in-app updates are wired but unsigned release channels remain unsuitable for broad rollout.
 - Single-user, local-only, no cloud sync.
 - Remote workbench routing remains partially staged. SSH Workspace Pi tools and file-tree/file-read paths use the main-owned SSH transport without local fallback; end-to-end remote Git, terminal, formatting, and watcher coverage is still required before calling the full workbench verified.
+- Durable Run orchestration is experimental and must not be treated as a background-agent guarantee. Automatic continuation, checkout ownership, and recovery need the verification gate recorded in `docs/decisions/2026-07-26-durable-run-orchestration.md`.
 - Diagnostic export includes a bounded, redacted lifecycle journal, worker snapshot, and Run snapshot. It excludes prompts, file contents, provider headers, credentials, and full shell commands.
 - Pi defaults to **YOLO**; OpenPi adds **optional** desktop policy rails — users can still install Pi [example extensions](https://github.com/earendil-works/pi/tree/main/packages/coding-agent/examples/extensions) for TUI-style gates.
 
