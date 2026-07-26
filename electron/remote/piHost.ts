@@ -219,9 +219,14 @@ export class RemotePiRpcHost implements PiWorkerHost {
     if (command.type === 'stop') return void (await this.stop())
     if (command.type === 'start_session') return
     const requestId = `remote-${++this.serial}`
-    if (command.type === 'prompt' && command.intent === 'run' && command.runContext) {
+    if (command.type === 'prompt') {
       await this.call(
-        { type: 'prompt', message: runContextCommand(command.runContext) },
+        {
+          type: 'prompt',
+          message: runContextCommand(
+            command.intent === 'run' ? (command.runContext ?? null) : null
+          ),
+        },
         `${requestId}-run-context`,
         60_000
       )
@@ -354,11 +359,14 @@ export class RemotePiRpcHost implements PiWorkerHost {
   }
 }
 
-function runContextCommand(context: {
-  id: string
-  epoch: number
-  contractVersion: number
-  continuationId?: string
-}): string {
+function runContextCommand(
+  context: {
+    id: string
+    epoch: number
+    contractVersion: number
+    continuationId?: string
+  } | null
+): string {
+  if (!context) return '/openpi-run-context -'
   return `/openpi-run-context ${Buffer.from(JSON.stringify(context)).toString('base64url')}`
 }

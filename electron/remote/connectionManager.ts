@@ -439,7 +439,7 @@ export class RemoteConnectionManager {
     const runExtension = Buffer.from(RUNNER_RUN_EXTENSION, 'utf8').toString('base64')
     await this.exec(
       client,
-      `if [ -s "$HOME/.nvm/nvm.sh" ]; then . "$HOME/.nvm/nvm.sh"; fi; mkdir -p "$HOME/.openpi/runtime/0.82.1" && npm install --prefix "$HOME/.openpi/runtime/0.82.1" @earendil-works/pi-coding-agent@0.82.1 && printf %s '${daemon}' | base64 -d > "$HOME/.openpi/runtime/0.82.1/runnerd.mjs" && printf %s '${connector}' | base64 -d > "$HOME/.openpi/runtime/0.82.1/runner-connect.mjs" && printf %s '${runExtension}' | base64 -d > "$HOME/.openpi/runtime/0.82.1/openpi-run-continuity.mjs" && chmod 700 "$HOME/.openpi/runtime/0.82.1/runnerd.mjs" "$HOME/.openpi/runtime/0.82.1/runner-connect.mjs" "$HOME/.openpi/runtime/0.82.1/openpi-run-continuity.mjs"`
+      `if [ -s "$HOME/.nvm/nvm.sh" ]; then . "$HOME/.nvm/nvm.sh"; fi; pkill -u "$(id -u)" -f '[.]openpi/runtime/0.82.1/runnerd[.]mjs' 2>/dev/null || true; rm -f "$HOME/.openpi/run/runner.sock"; mkdir -p "$HOME/.openpi/runtime/0.82.1" && npm install --prefix "$HOME/.openpi/runtime/0.82.1" @earendil-works/pi-coding-agent@0.82.1 && printf %s '${daemon}' | base64 -d > "$HOME/.openpi/runtime/0.82.1/runnerd.mjs" && printf %s '${connector}' | base64 -d > "$HOME/.openpi/runtime/0.82.1/runner-connect.mjs" && printf %s '${runExtension}' | base64 -d > "$HOME/.openpi/runtime/0.82.1/openpi-run-continuity.mjs" && chmod 700 "$HOME/.openpi/runtime/0.82.1/runnerd.mjs" "$HOME/.openpi/runtime/0.82.1/runner-connect.mjs" "$HOME/.openpi/runtime/0.82.1/openpi-run-continuity.mjs"`
     )
   }
 
