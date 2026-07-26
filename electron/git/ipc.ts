@@ -150,6 +150,33 @@ function assertHunkTargetsFile(hunkPatch: string, filePath: string): void {
   }
 }
 
+/**
+ * Read-only git calls must not reject when the workspace isn't a repository.
+ *
+ * A connected folder that isn't a git repo is a normal thing to open — plain
+ * document folders are a first-class case, not a mistake — but every git read
+ * here except GIT_STATUS assumed a repo and let `fatal: not a git repository`
+ * escape as a rejected IPC handler. The renderer sees an unhandled rejection
+ * instead of an empty panel.
+ *
+ * Reads degrade to their empty value; the error is still logged so this never
+ * hides a genuine failure. MUTATIONS are deliberately NOT wrapped: silently
+ * swallowing a failed commit or checkout is far worse than a noisy one.
+ */
+async function safeGitRead<T>(
+  label: string,
+  cwd: string,
+  fallback: T,
+  run: () => T | Promise<T>
+): Promise<T> {
+  try {
+    return await run()
+  } catch (err) {
+    console.error(`[openpi:git] ${label} failed for cwd`, cwd, err)
+    return fallback
+  }
+}
+
 export function registerGitIpc(deps: GitIpcDeps): void {
   deps.ipcMain.on(IPC.GIT_PANEL_MOUNTED, () => {
     const cwd = resolveGitCwd(deps)
@@ -261,8 +288,10 @@ export function registerGitIpc(deps: GitIpcDeps): void {
   deps.ipcMain.handle(IPC.GIT_REFS, async (): Promise<GitRefsResult | null> => {
     const cwd = requireCwd(deps)
     if (!cwd) return null
-    const git = await deps.getGitHost()
-    return gitRefsResultSchema.parse(await git.getGitRefs(cwd))
+    return safeGitRead('GIT_REFS', cwd, null, async () => {
+      const git = await deps.getGitHost()
+      return gitRefsResultSchema.parse(await git.getGitRefs(cwd))
+    })
   })
 
   deps.ipcMain.handle(
@@ -271,8 +300,10 @@ export function registerGitIpc(deps: GitIpcDeps): void {
       const cwd = requireCwd(deps)
       if (!cwd) return null
       const { query, limit } = gitHistoryRequestSchema.parse(raw)
-      const git = await deps.getGitHost()
-      return gitHistoryResultSchema.parse(await git.getGitHistory(cwd, query, limit))
+      return safeGitRead('GIT_HISTORY', cwd, null, async () => {
+        const git = await deps.getGitHost()
+        return gitHistoryResultSchema.parse(await git.getGitHistory(cwd, query, limit))
+      })
     }
   )
 
@@ -298,8 +329,10 @@ export function registerGitIpc(deps: GitIpcDeps): void {
   deps.ipcMain.handle(IPC.GIT_REMOTE_URL, async (): Promise<string | null> => {
     const cwd = requireCwd(deps)
     if (!cwd) return null
-    const git = await deps.getGitHost()
-    return git.getGitRemoteUrl(cwd)
+    return safeGitRead('GIT_REMOTE_URL', cwd, null, async () => {
+      const git = await deps.getGitHost()
+      return git.getGitRemoteUrl(cwd)
+    })
   })
 
   deps.ipcMain.handle(
@@ -362,15 +395,17 @@ export function registerGitIpc(deps: GitIpcDeps): void {
     async (_event, cwdFromRenderer?: string): Promise<FileTreeResult | null> => {
       const cwd = cwdFromRenderer ?? requireCwd(deps)
       if (!cwd) return null
-      const git = await deps.getGitHost()
-      const tree = git.getFileTree(cwd)
-      // Enrich tree with git status so the renderer can show M/A/D/R badges
-      const status = await git.getGitStatus(cwd)
-      const statusMap = new Map<string, string>()
-      for (const file of status.files) {
-        statusMap.set(file.path, file.status)
-      }
-      return fileTreeResultSchema.parse(enrichTree(tree, statusMap))
+      return safeGitRead('GIT_FILE_TREE', cwd, null, async () => {
+        const git = await deps.getGitHost()
+        const tree = git.getFileTree(cwd)
+        // Enrich tree with git status so the renderer can show M/A/D/R badges
+        const status = await git.getGitStatus(cwd)
+        const statusMap = new Map<string, string>()
+        for (const file of status.files) {
+          statusMap.set(file.path, file.status)
+        }
+        return fileTreeResultSchema.parse(enrichTree(tree, statusMap))
+      })
     }
   )
 
@@ -379,10 +414,12 @@ export function registerGitIpc(deps: GitIpcDeps): void {
     async (): Promise<GenerateCommitMessageResult | null> => {
       const cwd = requireCwd(deps)
       if (!cwd) return null
-      const git = await deps.getGitHost()
-      const status = await git.getGitStatus(cwd)
-      const staged = status?.files.filter((file) => file.staged) ?? []
-      return { message: git.generateCommitMessage(staged, await deps.getCommitAgentContext()) }
+      return safeGitRead('GIT_GENERATE_COMMIT_MSG', cwd, null, async () => {
+        const git = await deps.getGitHost()
+        const status = await git.getGitStatus(cwd)
+        const staged = status?.files.filter((file) => file.staged) ?? []
+        return { message: git.generateCommitMessage(staged, await deps.getCommitAgentContext()) }
+      })
     }
   )
 
@@ -392,8 +429,10 @@ export function registerGitIpc(deps: GitIpcDeps): void {
       const cwd = requireCwd(deps)
       if (!cwd) return []
       const { query, matchCase, wholeWord, useRegex } = searchFileContentsRequestSchema.parse(raw)
-      const git = await deps.getGitHost()
-      return git.searchFileContents(cwd, query, matchCase, wholeWord, useRegex)
+      return safeGitRead('SEARCH_FILE_CONTENTS', cwd, [] as FileContentHit[], async () => {
+        const git = await deps.getGitHost()
+        return git.searchFileContents(cwd, query, matchCase, wholeWord, useRegex)
+      })
     }
   )
 
@@ -408,8 +447,10 @@ export function registerGitIpc(deps: GitIpcDeps): void {
         console.warn('[openpi:git] GIT_STAGED_DIFF no cwd')
         return null
       }
-      const git = await deps.getGitHost()
-      return git.getGitStagedDiff(cwd)
+      return safeGitRead('GIT_STAGED_DIFF', cwd, null, async () => {
+        const git = await deps.getGitHost()
+        return git.getGitStagedDiff(cwd)
+      })
     }
   )
 
@@ -422,8 +463,10 @@ export function registerGitIpc(deps: GitIpcDeps): void {
         console.warn('[openpi:git] GIT_BRANCH_DIFF no cwd')
         return null
       }
-      const git = await deps.getGitHost()
-      return git.getGitBranchDiff(cwd, parsed.baseBranch)
+      return safeGitRead('GIT_BRANCH_DIFF', cwd, null, async () => {
+        const git = await deps.getGitHost()
+        return git.getGitBranchDiff(cwd, parsed.baseBranch)
+      })
     }
   )
 
@@ -436,9 +479,11 @@ export function registerGitIpc(deps: GitIpcDeps): void {
         console.warn('[openpi:git] GIT_BRANCH_BASE no cwd')
         return null
       }
-      const git = await deps.getGitHost()
-      const base = await git.getGitBranchBase(cwd)
-      return base ? { base } : null
+      return safeGitRead('GIT_BRANCH_BASE', cwd, null, async () => {
+        const git = await deps.getGitHost()
+        const base = await git.getGitBranchBase(cwd)
+        return base ? { base } : null
+      })
     }
   )
 
