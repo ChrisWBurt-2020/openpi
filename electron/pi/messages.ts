@@ -8,6 +8,7 @@ import type {
   showSystemNotification as notifySystem,
   playSoundEffect as playSound,
 } from '../services/notificationHost'
+import { SessionEpochGate } from './sessionEpoch'
 import type { SidecarMessage } from './sidecar'
 import { isStaleExtensionCtxEvent } from './staleCtx'
 
@@ -22,6 +23,8 @@ interface SidecarMessageDeps {
   getGitHost: () => Promise<typeof GitHost>
   emitSessionError: (message: string, code?: string) => void
   emitOutputLine: (line: OutputLine) => void
+  /** Injectable for tests; defaults to a fresh gate per handler. */
+  epochGate?: SessionEpochGate
 }
 
 interface SessionEventShape {
@@ -33,19 +36,28 @@ interface SessionEventShape {
 }
 
 export function createSidecarMessageHandler(deps: SidecarMessageDeps) {
+  const epochs = deps.epochGate ?? new SessionEpochGate()
+
   return function handleSidecarMessage(msg: SidecarMessage): void {
     switch (msg.type) {
       case 'ready':
+        // The sidecar restarted, so its epoch counter starts over.
+        epochs.reset()
+        return
       case 'stopped':
         return
 
       case 'session_ready': {
+        if (!epochs.observeReady(msg.epoch)) return
         const ready = deps.normalizeSessionReady(msg.payload)
         deps.applySessionReady(ready, ready.cwd)
         return
       }
 
       case 'session_event': {
+        // Drop anything emitted by a thread the user has already left, so the
+        // incoming thread doesn't inherit the outgoing one's tail.
+        if (!epochs.accepts(msg.epoch)) return
         if (isStaleExtensionCtxEvent(msg.event)) return
 
         const event = msg.event as SessionEventShape

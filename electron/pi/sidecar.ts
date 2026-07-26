@@ -57,6 +57,17 @@ let _modelRuntime: ModelRuntime | null = null
 let _modelRegistry: ModelRegistry | null = null
 /** Advisory owner lock for the session file we currently have open (ADR-003). */
 let _sessionLock: { lockPath: string; heartbeat: NodeJS.Timeout } | null = null
+/**
+ * Monotonic counter, bumped every time the live session is replaced.
+ *
+ * The sidecar runs exactly one session, so switching threads disposes the old
+ * one and builds a new one. Session events carry no session identity, which
+ * means an event still in flight from the disposed session gets applied to
+ * whatever session is open when it lands — the new thread inherits the old
+ * thread's tail. Stamping every event lets the main process drop anything
+ * from a superseded session.
+ */
+let _sessionEpoch = 0
 let _cachedResourceLoader: {
   cwd: string
   workspaceTrusted: boolean
@@ -100,6 +111,13 @@ const parentPort: ParentPort = maybeParentPort
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function send(msg: SidecarMessage): void {
+  // Stamp session traffic centrally rather than at each call site, so a new
+  // emitter added later can't forget to and silently reintroduce cross-thread
+  // event leakage.
+  if (msg.type === 'session_event' || msg.type === 'session_ready') {
+    parentPort.postMessage({ ...msg, epoch: _sessionEpoch })
+    return
+  }
   parentPort.postMessage(msg)
 }
 
@@ -451,6 +469,35 @@ function adoptSessionLock(result: SessionLockAcquireResult | null): void {
   _sessionLock = { lockPath: result.lockPath, heartbeat }
 }
 
+/** How long to wait for an aborted thread to come to rest before moving on. */
+const SETTLE_TIMEOUT_MS = 5_000
+
+/**
+ * Bring a session to rest before it is disposed.
+ *
+ * Best-effort on purpose: this runs on the path that opens the thread the user
+ * just asked for, so a session that refuses to settle must not block them.
+ * We abort, wait briefly, then proceed regardless — a stuck outgoing thread
+ * costs a leaked stream; blocking here would cost the user their click.
+ */
+async function settleSessionBeforeSwitch(
+  session: Awaited<ReturnType<typeof createAgentSession>>['session']
+): Promise<void> {
+  try {
+    const streaming =
+      (session.agent as unknown as { state?: { isStreaming?: boolean } }).state?.isStreaming ??
+      false
+    if (!streaming) return
+    await session.abort()
+    await Promise.race([
+      session.agent.waitForIdle(),
+      new Promise((resolve) => setTimeout(resolve, SETTLE_TIMEOUT_MS)),
+    ])
+  } catch {
+    // Never let a failure to settle block opening the requested thread.
+  }
+}
+
 async function startSession(
   cwd: string,
   opts: {
@@ -460,9 +507,19 @@ async function startSession(
     workspaceTrusted?: boolean
   } = {}
 ): Promise<void> {
+  // Anything still in flight from here on belongs to a session the user has
+  // moved on from. Bump first so late events are already stale by the time
+  // teardown starts.
+  _sessionEpoch += 1
+
   // Dispose previous session — emit session_shutdown first so extensions
   // (e.g. pi-task polling) clear timers and drop captured `pi` before ctx invalidates.
   if (state) {
+    // Settle the outgoing thread before tearing it down. Switching mid-response
+    // used to dispose a session with a live model stream and in-flight tool
+    // calls still attached to it; those then completed against a disposed
+    // session. Abort, then wait for the agent loop to actually come to rest.
+    await settleSessionBeforeSwitch(state.session)
     state.unsubscribe()
     const shutdownReason: 'new' | 'resume' | 'fork' = opts.forkEntryId
       ? 'fork'

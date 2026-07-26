@@ -64,8 +64,12 @@ export type SidecarCommand =
 
 export type SidecarMessage =
   | { type: 'ready' }
-  | { type: 'session_ready'; requestId?: string; payload: SessionReadyPayload }
-  | { type: 'session_event'; event: Record<string, unknown> }
+  // `epoch` is stamped by the sidecar's send() on session traffic. It counts
+  // session replacements, so main can discard events emitted by a session the
+  // user has already switched away from — without it, a late event from the
+  // outgoing thread lands in the incoming one.
+  | { type: 'session_ready'; requestId?: string; payload: SessionReadyPayload; epoch?: number }
+  | { type: 'session_event'; event: Record<string, unknown>; epoch?: number }
   | { type: 'session_error'; requestId?: string; message: string; code?: string }
   | { type: 'session_index_updated' }
   | { type: 'stats_result'; requestId: string; stats: Record<string, unknown> }
