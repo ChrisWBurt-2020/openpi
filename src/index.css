@@ -17122,9 +17122,48 @@ body.panel-dragging {
 .thread-sidebar-thread-label {
   display: block;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   opacity: 0.9;
+  /* Fade the right edge instead of an ellipsis, so the text can slide out
+     from under it on hover rather than the "…" jumping away. */
+  mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent 100%);
+}
+
+.thread-sidebar-thread-text {
+  display: inline-block;
+  white-space: nowrap;
+  transform: translateX(0);
+  /* Ease out on the way in, ease back on the way out. The long duration is
+     the point: it should read as a slow reveal, not a twitch. */
+  transition: transform 2.6s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/*
+ * Pull left by exactly the overflow: (visible width - text width). On an
+ * inline-block, 100% resolves to the element's OWN width, so this is negative
+ * only when the label is actually too long. min(0px, ...) clamps it, which
+ * keeps short labels perfectly still instead of drifting right.
+ */
+.thread-sidebar-thread:hover .thread-sidebar-thread-text,
+.thread-sidebar-thread:focus-visible .thread-sidebar-thread-text {
+  transform: translateX(min(0px, calc(var(--thread-label-width, 190px) - 100%)));
+}
+
+/* Respect a reduced-motion preference: keep the ellipsis, drop the travel. */
+@media (prefers-reduced-motion: reduce) {
+  .thread-sidebar-thread-label {
+    text-overflow: ellipsis;
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+  .thread-sidebar-thread-text {
+    transition: none;
+  }
+  .thread-sidebar-thread:hover .thread-sidebar-thread-text,
+  .thread-sidebar-thread:focus-visible .thread-sidebar-thread-text {
+    transform: none;
+  }
 }
 
 /* Collapsed state: a thin rail with just the reopen affordance. */

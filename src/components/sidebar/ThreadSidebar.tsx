@@ -121,7 +121,12 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
                               title={threadLabel(chat)}
                               onClick={() => props.onSelectSession(chat.path)}
                             >
-                              <span class="thread-sidebar-thread-label">{threadLabel(chat)}</span>
+                              {/* Inner span is the moving part: on hover it
+                                  slides far enough to reveal whatever the
+                                  ellipsis cut off, then eases back. */}
+                              <span class="thread-sidebar-thread-label">
+                                <span class="thread-sidebar-thread-text">{threadLabel(chat)}</span>
+                              </span>
                             </button>
                           </li>
                         )}
