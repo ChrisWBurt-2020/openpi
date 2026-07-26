@@ -58,6 +58,8 @@ export function truncate(value: string, length: number): string {
 }
 
 export function canonicalizePath(value: string): string {
+  // SSH workspace identities are virtual URIs, never Windows filesystem paths.
+  if (value.startsWith('ssh://')) return value
   try {
     return fs.realpathSync.native(value)
   } catch {
@@ -66,6 +68,7 @@ export function canonicalizePath(value: string): string {
 }
 
 export function displayNameForPath(value: string): string {
+  if (value.startsWith('ssh://')) return path.posix.basename(value) || value
   return path.basename(value) || value
 }
 

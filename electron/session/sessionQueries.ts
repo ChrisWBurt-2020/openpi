@@ -14,6 +14,10 @@ type WorkspaceRow = {
   display_name: string
   last_opened_at: string | null
   session_count: number
+  connection_id: string | null
+  remote_path: string | null
+  connection_label: string | null
+  default_execution_mode: string | null
 }
 
 type SessionRow = {
@@ -116,9 +120,12 @@ export function listWorkspaces(db: Database.Database): WorkspaceInfo[] {
   const rows = db
     .prepare(`
     select w.path, w.display_name, w.last_opened_at,
-      count(s.path) as session_count
+      count(s.path) as session_count,
+      rp.connection_id, rp.remote_path, rp.default_execution_mode, rc.label as connection_label
     from workspaces w
     left join sessions s on s.workspace_path = w.path
+    left join remote_projects rp on rp.workspace_path = w.path
+    left join remote_connections rc on rc.id = rp.connection_id
     where w.last_opened_at is not null
     group by w.path
     order by w.last_opened_at desc, w.display_name asc
@@ -130,6 +137,17 @@ export function listWorkspaces(db: Database.Database): WorkspaceInfo[] {
     displayName: row.display_name,
     lastOpenedAt: row.last_opened_at,
     sessionCount: row.session_count,
+    location:
+      row.connection_id && row.remote_path
+        ? { kind: 'ssh' as const, connectionId: row.connection_id, path: row.remote_path }
+        : { kind: 'local' as const, path: row.path },
+    connectionLabel: row.connection_label,
+    executionMode:
+      row.default_execution_mode === 'ssh-workspace'
+        ? 'ssh-workspace'
+        : row.connection_id
+          ? 'persistent-runner'
+          : 'local',
   }))
 }
 

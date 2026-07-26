@@ -26,6 +26,11 @@ import {
 } from '@earendil-works/pi-coding-agent'
 import type { InsightMode } from '../../src/lib/insights'
 import { expandPromptTemplateText } from '../../src/lib/sessionPrompt'
+import type {
+  RemoteWorkspaceDescriptor,
+  WorkspaceResult,
+  WorkspaceStream,
+} from '../remote/workspaceProtocol'
 import { bundledThemePaths } from '../services/bundledThemes'
 import { createOpenPiExtensionUIContext } from './extensionUiContext'
 import { fulfillExtensionUiPending } from './extensionUiPending'
@@ -39,6 +44,7 @@ import {
 } from './sessionLock'
 import { defaultBackupDir } from './sessionPreflight'
 import { isStaleExtensionCtxEvent, isStaleExtensionCtxMessage } from './staleCtx'
+import { createWorkspaceExtension, WorkspaceTransportClient } from './workspaceExtension'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -77,6 +83,8 @@ let _cachedResourceLoader: {
   workspaceTrusted: boolean
   loader: InstanceType<typeof DefaultResourceLoader>
 } | null = null
+let _remoteWorkspace: RemoteWorkspaceDescriptor | null = null
+let _workspaceTransport: WorkspaceTransportClient
 const _pendingOAuthPrompts = new Map<string, (v: string) => void>()
 
 // ─── Port ─────────────────────────────────────────────────────────────────────
@@ -111,6 +119,7 @@ if (!maybeParentPort) {
   process.exit(1)
 }
 const parentPort: ParentPort = maybeParentPort
+_workspaceTransport = new WorkspaceTransportClient((message) => parentPort.postMessage(message))
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -376,18 +385,23 @@ function buildSidecarPromptText(
 
 async function getResourceLoader(cwd: string, workspaceTrusted: boolean) {
   const agentDir = getAgentDir()
+  // A canonical ssh:// identity must never be interpreted as a Windows path.
+  // Remote project resources are supplied through the transport layer; until
+  // then load only trusted local/global Pi resources here.
+  const loaderCwd = _remoteWorkspace ? agentDir : cwd
   if (
     _cachedResourceLoader &&
-    _cachedResourceLoader.cwd === cwd &&
+    _cachedResourceLoader.cwd === loaderCwd &&
     _cachedResourceLoader.workspaceTrusted === workspaceTrusted
   ) {
     return _cachedResourceLoader.loader
   }
 
-  const fileSettingsManager = SettingsManager.create(cwd, agentDir)
-  const settingsManager = workspaceTrusted
-    ? fileSettingsManager
-    : SettingsManager.inMemory(fileSettingsManager.getGlobalSettings())
+  const fileSettingsManager = SettingsManager.create(loaderCwd, agentDir)
+  const settingsManager =
+    workspaceTrusted && !_remoteWorkspace
+      ? fileSettingsManager
+      : SettingsManager.inMemory(fileSettingsManager.getGlobalSettings())
   // When the workspace is not yet trusted, project-local extensions (.pi/extensions)
   // are blocked by noExtensions=true — they're unknown third-party code.
   // Global extensions (~/.pi/agent/extensions) are the user's own trusted code and
@@ -402,13 +416,17 @@ async function getResourceLoader(cwd: string, workspaceTrusted: boolean) {
   // to jiti.import() a directory.
   const noExtensions = !workspaceTrusted
   const loader = new DefaultResourceLoader({
-    cwd,
+    cwd: loaderCwd,
     agentDir,
     settingsManager,
     noExtensions,
     additionalExtensionPaths: noExtensions ? [agentDir] : [],
     additionalThemePaths: bundledThemePaths(),
-    extensionFactories: [createInsightsExtension(() => insightMode)],
+    extensionFactories: [
+      createInsightsExtension(() => insightMode),
+      createWorkspaceExtension(() => _remoteWorkspace, _workspaceTransport),
+    ],
+    noContextFiles: Boolean(_remoteWorkspace),
   })
   try {
     await loader.reload()
@@ -419,7 +437,7 @@ async function getResourceLoader(cwd: string, workspaceTrusted: boolean) {
       `[packages] One or more Pi packages failed to install and were skipped: ${msg}`
     )
   }
-  _cachedResourceLoader = { cwd, workspaceTrusted, loader }
+  _cachedResourceLoader = { cwd: loaderCwd, workspaceTrusted, loader }
   return loader
 }
 
@@ -511,6 +529,7 @@ async function startSession(
     forkEntryId?: string
     requestId?: string
     workspaceTrusted?: boolean
+    remoteWorkspace?: RemoteWorkspaceDescriptor
   } = {}
 ): Promise<void> {
   // Anything still in flight from here on belongs to a session the user has
@@ -537,13 +556,15 @@ async function startSession(
     state = null
   }
 
+  _remoteWorkspace = opts.remoteWorkspace ?? null
   const agentDir = getAgentDir()
   const modelRuntime = await getModelRuntime()
-  const fileSettingsManager = SettingsManager.create(cwd, agentDir)
+  const fileSettingsManager = SettingsManager.create(_remoteWorkspace ? agentDir : cwd, agentDir)
   const workspaceTrusted = opts.workspaceTrusted ?? false
-  const settingsManager = workspaceTrusted
-    ? fileSettingsManager
-    : SettingsManager.inMemory(fileSettingsManager.getGlobalSettings())
+  const settingsManager =
+    workspaceTrusted && !_remoteWorkspace
+      ? fileSettingsManager
+      : SettingsManager.inMemory(fileSettingsManager.getGlobalSettings())
   // ADR-003: never open a shared session file blind. resolveSessionAccess()
   // runs the format-version preflight and takes the advisory owner lock, and
   // returns what we may actually open — falling back to a detached copy when
@@ -717,11 +738,20 @@ async function startSession(
 // ─── Command handler ────────────────────────────────────────────────────────────
 
 parentPort.on('message', (message) => {
-  const cmd = (
+  const incoming =
     message && typeof message === 'object' && 'data' in message
       ? (message as { data: unknown }).data
       : message
-  ) as SidecarCommand
+  if (
+    incoming &&
+    typeof incoming === 'object' &&
+    ((incoming as { type?: string }).type === 'workspace_result' ||
+      (incoming as { type?: string }).type === 'workspace_stream')
+  ) {
+    _workspaceTransport.receive(incoming as WorkspaceResult | WorkspaceStream)
+    return
+  }
+  const cmd = incoming as SidecarCommand
   void handleCommand(cmd).catch((err) => {
     send({
       type: 'error',
@@ -740,6 +770,7 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
           forkEntryId: cmd.forkEntryId,
           requestId: cmd.requestId,
           workspaceTrusted: cmd.workspaceTrusted,
+          remoteWorkspace: cmd.remoteWorkspace,
         })
       } catch (err) {
         send({

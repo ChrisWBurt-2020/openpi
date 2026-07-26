@@ -3,6 +3,8 @@ import path from 'node:path'
 import Database from 'better-sqlite3'
 import type { InsightPayload, SavedInsight } from '../../src/lib/insights'
 import type {
+  ConnectionProfile,
+  ProjectExecutionMode,
   SessionHistoryPage,
   SessionListItem,
   SessionListOptions,
@@ -90,6 +92,170 @@ export class SessionIndexStore {
   }
   listWorkspaces(): WorkspaceInfo[] {
     return _listWorkspaces(this.db)
+  }
+
+  listRemoteConnections(): ConnectionProfile[] {
+    const rows = this.db
+      .prepare(
+        `select id, label, host, username, port, identity_file, host_key_fingerprint,
+          last_connected_at from remote_connections order by label collate nocase`
+      )
+      .all() as Array<{
+      id: string
+      label: string
+      host: string
+      username: string
+      port: number
+      identity_file: string | null
+      host_key_fingerprint: string | null
+      last_connected_at: string | null
+    }>
+    return rows.map((row) => ({
+      id: row.id,
+      label: row.label,
+      host: row.host,
+      username: row.username,
+      port: row.port,
+      identityFile: row.identity_file,
+      hostKeyFingerprint: row.host_key_fingerprint,
+      status: 'disconnected',
+      latencyMs: null,
+      lastConnectedAt: row.last_connected_at,
+      lastError: null,
+    }))
+  }
+
+  saveRemoteConnection(profile: ConnectionProfile): void {
+    const now = new Date().toISOString()
+    this.db
+      .prepare(
+        `insert into remote_connections(
+          id, label, host, username, port, identity_file, host_key_fingerprint,
+          last_connected_at, created_at, updated_at
+        ) values (
+          @id, @label, @host, @username, @port, @identityFile, @hostKeyFingerprint,
+          @lastConnectedAt, @createdAt, @updatedAt
+        ) on conflict(id) do update set
+          label = excluded.label, host = excluded.host, username = excluded.username,
+          port = excluded.port, identity_file = excluded.identity_file,
+          host_key_fingerprint = excluded.host_key_fingerprint, updated_at = excluded.updated_at`
+      )
+      .run({ ...profile, createdAt: now, updatedAt: now })
+  }
+
+  removeRemoteConnection(id: string): void {
+    this.db.prepare('delete from remote_connections where id = ?').run(id)
+  }
+
+  touchRemoteConnection(id: string): void {
+    this.db
+      .prepare('update remote_connections set last_connected_at = ?, updated_at = ? where id = ?')
+      .run(new Date().toISOString(), new Date().toISOString(), id)
+  }
+
+  setRemoteConnectionCredential(
+    connectionId: string,
+    providerId: string,
+    encryptedKey: string
+  ): void {
+    this.db
+      .prepare(
+        `insert into remote_connection_credentials(connection_id, provider_id, encrypted_key)
+         values (?, ?, ?)
+         on conflict(connection_id, provider_id) do update set encrypted_key = excluded.encrypted_key`
+      )
+      .run(connectionId, providerId, encryptedKey)
+  }
+
+  removeRemoteConnectionCredential(connectionId: string, providerId: string): void {
+    this.db
+      .prepare(
+        'delete from remote_connection_credentials where connection_id = ? and provider_id = ?'
+      )
+      .run(connectionId, providerId)
+  }
+
+  getRemoteConnectionCredentials(
+    connectionId: string
+  ): Array<{ providerId: string; encryptedKey: string }> {
+    return this.db
+      .prepare(
+        'select provider_id as providerId, encrypted_key as encryptedKey from remote_connection_credentials where connection_id = ?'
+      )
+      .all(connectionId) as Array<{ providerId: string; encryptedKey: string }>
+  }
+
+  addRemoteWorkspace(
+    connectionId: string,
+    remotePath: string,
+    executionMode: Extract<
+      ProjectExecutionMode,
+      'ssh-workspace' | 'persistent-runner'
+    > = 'ssh-workspace'
+  ): string {
+    const normalizedPath = remotePath.replace(/\\/g, '/')
+    const workspacePath = `ssh://${connectionId}${normalizedPath}`
+    const displayName = path.posix.basename(normalizedPath) || normalizedPath
+    const now = new Date().toISOString()
+    const insert = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `insert into workspaces(path, display_name, last_opened_at)
+           values (?, ?, ?)
+           on conflict(path) do update set display_name = excluded.display_name,
+             last_opened_at = excluded.last_opened_at`
+        )
+        .run(workspacePath, displayName, now)
+      this.db
+        .prepare(
+          `insert into remote_projects(connection_id, remote_path, workspace_path, default_execution_mode, created_at)
+           values (?, ?, ?, ?, ?)
+           on conflict(connection_id, remote_path) do update set workspace_path = excluded.workspace_path,
+             default_execution_mode = excluded.default_execution_mode`
+        )
+        .run(connectionId, normalizedPath, workspacePath, executionMode, now)
+    })
+    insert()
+    return workspacePath
+  }
+
+  removeRemoteWorkspace(workspacePath: string): void {
+    const remove = this.db.transaction(() => {
+      this.db.prepare('delete from remote_projects where workspace_path = ?').run(workspacePath)
+      this.db.prepare('delete from sessions where workspace_path = ?').run(workspacePath)
+      this.db.prepare('delete from workspaces where path = ?').run(workspacePath)
+    })
+    remove()
+  }
+
+  getRemoteWorkspace(workspacePath: string): {
+    connectionId: string
+    path: string
+    executionMode: Extract<ProjectExecutionMode, 'ssh-workspace' | 'persistent-runner'>
+  } | null {
+    const row = this.db
+      .prepare(
+        'select connection_id, remote_path, default_execution_mode from remote_projects where workspace_path = ?'
+      )
+      .get(workspacePath) as
+      | { connection_id: string; remote_path: string; default_execution_mode?: string }
+      | undefined
+    if (!row) return null
+    return {
+      connectionId: row.connection_id,
+      path: row.remote_path,
+      executionMode:
+        row.default_execution_mode === 'ssh-workspace' ? 'ssh-workspace' : 'persistent-runner',
+    }
+  }
+
+  setRemoteWorkspaceMode(
+    workspacePath: string,
+    executionMode: Extract<ProjectExecutionMode, 'ssh-workspace' | 'persistent-runner'>
+  ): void {
+    this.db
+      .prepare('update remote_projects set default_execution_mode = ? where workspace_path = ?')
+      .run(executionMode, workspacePath)
   }
 
   // ── Session refresh + listing ────────────────────────────────────────────────
@@ -307,6 +473,7 @@ export class SessionIndexStore {
     const headerCwd = typeof header?.cwd === 'string' ? header.cwd : ''
     const cwd = info.cwd || headerCwd
     const workspacePath = cwd ? canonicalizePath(cwd) : ''
+    const executionMode = this.getRemoteWorkspace(workspacePath)?.executionMode ?? 'local'
     if (workspacePath) {
       this.db
         .prepare(`
@@ -330,12 +497,12 @@ export class SessionIndexStore {
           path, session_id, cwd, workspace_path, title, created_at, updated_at,
           message_count, first_message, all_messages_text, parent_session_path,
           input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
-          cost, entry_count, branch_count, last_model, file_mtime, usage_index_version
+          cost, entry_count, branch_count, last_model, file_mtime, usage_index_version, execution_mode
         ) values (
           @path, @sessionId, @cwd, @workspacePath, @title, @createdAt, @updatedAt,
           @messageCount, @firstMessage, @allMessagesText, @parentSessionPath,
           @inputTokens, @outputTokens, @cacheReadTokens, @cacheWriteTokens,
-          @cost, @entryCount, @branchCount, @lastModel, @fileMtime, @usageIndexVersion
+          @cost, @entryCount, @branchCount, @lastModel, @fileMtime, @usageIndexVersion, @executionMode
         )
         on conflict(path) do update set
           session_id = excluded.session_id,
@@ -355,9 +522,10 @@ export class SessionIndexStore {
           cost = excluded.cost,
           entry_count = excluded.entry_count,
           branch_count = excluded.branch_count,
-          last_model = excluded.last_model,
-          file_mtime = excluded.file_mtime,
-          usage_index_version = excluded.usage_index_version
+           last_model = excluded.last_model,
+           file_mtime = excluded.file_mtime,
+           usage_index_version = excluded.usage_index_version,
+           execution_mode = excluded.execution_mode
       `)
 
       .run({
@@ -382,6 +550,7 @@ export class SessionIndexStore {
         lastModel: lastModelId,
         fileMtime: newMtime,
         usageIndexVersion: USAGE_INDEX_VERSION,
+        executionMode,
       })
 
     // Index entries for tree traversal and usage capture.

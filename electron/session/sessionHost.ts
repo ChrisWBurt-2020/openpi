@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import os from 'node:os'
+import path from 'node:path'
 import type { BrowserWindow } from 'electron'
 import type { InsightMode } from '../../src/lib/insights'
 import { IPC, type OutputLine, type SessionReady } from '../../src/lib/ipc'
@@ -6,6 +8,10 @@ import { removeWorktree } from '../git/worktree'
 import type { SidecarMessage } from '../pi/sidecar'
 import { PiSidecarHost } from '../pi/sidecarHost'
 import { SidecarPool } from '../pi/sidecarPool'
+import type { PiWorkerHost } from '../pi/workerHost'
+import type { RemoteConnectionManager } from '../remote/connectionManager'
+import { RemotePiRpcHost } from '../remote/piHost'
+import type { RemoteWorkspaceDescriptor, WorkspaceRequest } from '../remote/workspaceProtocol'
 import { emitSessionError } from '../services/notificationHost'
 import type { SessionIndexStore } from './sessionIndex'
 import { threadCwdRegistry } from './threadCwd'
@@ -40,9 +46,44 @@ let _insightMode: InsightMode = 'mentor'
 const _threadBySessionFile = new Map<string, string>()
 const _stateByThread = new Map<string, SessionState>()
 const _readyByThread = new Map<string, SessionReady>()
-const _sidecarPool = new SidecarPool<PiSidecarHost>({
+type WorkerPlan =
+  | { kind: 'persistent-runner'; connectionId: string; workspacePath: string }
+  | { kind: 'ssh-workspace'; descriptor: RemoteWorkspaceDescriptor }
+
+const _workerPlans = new Map<string, WorkerPlan>()
+let _remoteConnections: RemoteConnectionManager | null = null
+const _sidecarPool = new SidecarPool<PiWorkerHost>({
   maxLive: MAX_LIVE_THREADS,
   spawn: (threadId) => {
+    const plan = _workerPlans.get(threadId)
+    if (plan?.kind === 'persistent-runner' && _remoteConnections) {
+      const host = new RemotePiRpcHost({
+        runnerId: threadId,
+        connectionId: plan.connectionId,
+        workspacePath: plan.workspacePath,
+        manager: _remoteConnections,
+        onMessage: (msg) => {
+          if (msg.type === 'session_event') {
+            const event = msg.event as { type?: string }
+            if (event.type === 'agent_start') _sidecarPool.setBusy(threadId, true)
+            if (event.type === 'agent_end' || event.type === 'agent_settled')
+              _sidecarPool.setBusy(threadId, false)
+          }
+          _onSidecarMessage?.(threadId, msg)
+        },
+        onCrash: () => {
+          _sidecarPool.setBusy(threadId, false)
+          _onSidecarMessage?.(threadId, {
+            type: 'session_error',
+            message: 'Remote Pi connection closed.',
+            code: 'remote_pi_disconnected',
+          })
+          _sidecarPool.release(threadId)
+        },
+      })
+      host.start()
+      return host
+    }
     const host = new PiSidecarHost({
       onMessage: (msg) => {
         if (msg.type === 'session_event') {
@@ -63,6 +104,18 @@ const _sidecarPool = new SidecarPool<PiSidecarHost>({
           code: 'pi_sidecar_crashed',
         })
         _sidecarPool.release(threadId)
+      },
+      onWorkspaceRequest: async (request: WorkspaceRequest) => {
+        const current = _workerPlans.get(threadId)
+        if (current?.kind !== 'ssh-workspace' || !_remoteConnections) {
+          throw new Error('SSH workspace transport is unavailable')
+        }
+        return _remoteConnections.workspaceOperation(
+          current.descriptor.connectionId,
+          current.descriptor.root,
+          current.descriptor.virtualCwd,
+          request
+        )
       },
     })
     host.start()
@@ -93,6 +146,10 @@ export function setSessionHostSessionIndex(si: SessionIndexStore | null): void {
   ) {
     _insightMode = savedMode
   }
+}
+
+export function setSessionHostRemoteConnections(manager: RemoteConnectionManager | null): void {
+  _remoteConnections = manager
 }
 
 function sendToMainWindow(channel: string, ...args: unknown[]): void {
@@ -138,7 +195,7 @@ export function getDeferredWorkspace(): string | null {
   return _deferredWorkspace
 }
 
-export function getPiSidecarHost(): PiSidecarHost | null {
+export function getPiSidecarHost(): PiWorkerHost | null {
   return _activeThreadId ? (_sidecarPool.get(_activeThreadId) ?? null) : null
 }
 
@@ -169,11 +226,11 @@ export function createRequestId(): string {
 
 // ─── Pi sidecar lifecycle ──────────────────────────────────────────────────────
 
-export function requirePiSidecar(): PiSidecarHost {
+export function requirePiSidecar(): PiWorkerHost {
   return ensurePiSidecarStarted()
 }
 
-export function ensurePiSidecarStarted(): PiSidecarHost {
+export function ensurePiSidecarStarted(): PiWorkerHost {
   const threadId = _activeThreadId ?? 'bootstrap'
   const result = _sidecarPool.acquire(threadId)
   if (!result.ok) throw new Error(result.message)
@@ -279,12 +336,29 @@ export async function startSession(cwd: string, options: StartSessionOptions = {
   const deferredWorkspace = _deferredWorkspace
   const deferredThreadId = _deferredThreadId
   _deferredWorkspace = null
-  const workspacePath = _sessionIndex?.upsertWorkspace(cwd) ?? cwd
+  const remoteWorkspace = _sessionIndex?.getRemoteWorkspace(cwd) ?? null
+  const workspacePath = remoteWorkspace ? cwd : (_sessionIndex?.upsertWorkspace(cwd) ?? cwd)
 
   const threadId =
     (options.sessionFile ? _threadBySessionFile.get(options.sessionFile) : undefined) ??
     (deferredWorkspace === workspacePath ? (deferredThreadId ?? undefined) : undefined) ??
     randomUUID()
+  if (remoteWorkspace?.executionMode === 'persistent-runner') {
+    _workerPlans.set(threadId, {
+      kind: 'persistent-runner',
+      connectionId: remoteWorkspace.connectionId,
+      workspacePath: remoteWorkspace.path,
+    })
+  } else if (remoteWorkspace) {
+    _workerPlans.set(threadId, {
+      kind: 'ssh-workspace',
+      descriptor: {
+        connectionId: remoteWorkspace.connectionId,
+        root: remoteWorkspace.path,
+        virtualCwd: path.join(os.tmpdir(), 'openpi-ssh-workspaces', threadId),
+      },
+    })
+  } else _workerPlans.delete(threadId)
   const acquired = _sidecarPool.acquire(threadId)
   if (!acquired.ok) throw new Error(acquired.message)
   _activeThreadId = threadId
@@ -314,6 +388,7 @@ export async function startSession(cwd: string, options: StartSessionOptions = {
   }
 
   const requestId = createRequestId()
+  const workerPlan = _workerPlans.get(threadId)
   const response = await acquired.worker.request<
     Extract<SidecarMessage, { type: 'session_ready' }>
   >({
@@ -321,6 +396,7 @@ export async function startSession(cwd: string, options: StartSessionOptions = {
     requestId,
     cwd: workspacePath,
     workspaceTrusted: _sessionIndex?.isWorkspaceTrusted(workspacePath) ?? false,
+    remoteWorkspace: workerPlan?.kind === 'ssh-workspace' ? workerPlan.descriptor : undefined,
     sessionFile: options.sessionFile,
     forkEntryId: options.forkEntryId,
   })
@@ -368,7 +444,9 @@ export function activeWorkspacePath(): string | null {
 }
 
 export function showDeferredWorkspace(cwd: string): void {
-  const workspacePath = _sessionIndex?.upsertWorkspace(cwd) ?? cwd
+  const workspacePath = _sessionIndex?.getRemoteWorkspace(cwd)
+    ? cwd
+    : (_sessionIndex?.upsertWorkspace(cwd) ?? cwd)
   const threadId = randomUUID()
   _deferredWorkspace = workspacePath
   _deferredThreadId = threadId

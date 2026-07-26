@@ -9,6 +9,7 @@ import { type ChildProcess, fork, spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, type UtilityProcess, utilityProcess } from 'electron'
+import type { WorkspaceRequest, WorkspaceResult } from '../remote/workspaceProtocol'
 import type { SidecarCommand, SidecarMessage } from './sidecar'
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url))
@@ -78,10 +79,14 @@ export class PiSidecarHost {
   constructor(opts: {
     onMessage: (msg: SidecarMessage) => void
     onCrash: () => void
+    onWorkspaceRequest?: (request: WorkspaceRequest) => Promise<unknown>
   }) {
     this.onMessage = opts.onMessage
     this.onCrash = opts.onCrash
+    this.onWorkspaceRequest = opts.onWorkspaceRequest
   }
+
+  private readonly onWorkspaceRequest?: (request: WorkspaceRequest) => Promise<unknown>
 
   /** PID of the sidecar child process, or undefined before spawn. */
   get workerPid(): number | undefined {
@@ -140,6 +145,15 @@ export class PiSidecarHost {
     })
 
     child.on('message', (msg: unknown) => {
+      if (
+        msg &&
+        typeof msg === 'object' &&
+        (msg as { type?: string }).type === 'workspace_request'
+      ) {
+        const request = msg as WorkspaceRequest
+        void this.handleWorkspaceRequest(child, request)
+        return
+      }
       const message = msg as SidecarMessage
       const requestId = 'requestId' in message ? message.requestId : undefined
       if (requestId) {
@@ -213,6 +227,30 @@ export class PiSidecarHost {
     )
 
     this.child = child
+  }
+
+  private async handleWorkspaceRequest(
+    child: SidecarProcess,
+    request: WorkspaceRequest
+  ): Promise<void> {
+    try {
+      if (!this.onWorkspaceRequest) throw new Error('SSH workspace transport is unavailable')
+      const data = await this.onWorkspaceRequest(request)
+      sendToSidecar(child, {
+        type: 'workspace_result',
+        requestId: request.requestId,
+        ok: true,
+        data,
+      })
+    } catch (error) {
+      const response: WorkspaceResult = {
+        type: 'workspace_result',
+        requestId: request.requestId,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      }
+      sendToSidecar(child, response)
+    }
   }
 
   send(command: SidecarCommand): void {

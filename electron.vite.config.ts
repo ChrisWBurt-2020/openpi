@@ -20,6 +20,9 @@ export default defineConfig({
           '@earendil-works/pi-coding-agent',
           '@ff-labs/fff-node',
           'ffi-rs',
+          // ssh2 loads native crypto helpers through CommonJS require(). Keep
+          // it external so Electron's ESM main entry never inlines that loader.
+          'ssh2',
         ],
       },
     },

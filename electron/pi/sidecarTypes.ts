@@ -1,4 +1,9 @@
 import type { InsightMode } from '../../src/lib/insights'
+import type {
+  RemoteWorkspaceDescriptor,
+  WorkspaceResult,
+  WorkspaceStream,
+} from '../remote/workspaceProtocol'
 
 /**
  * piSidecarTypes.ts — Shared types for the Pi SDK sidecar process.
@@ -18,6 +23,7 @@ export type SidecarCommand =
       forkEntryId?: string
       requestId?: string
       workspaceTrusted?: boolean
+      remoteWorkspace?: RemoteWorkspaceDescriptor
     }
   | { type: 'prompt'; text: string; contextPrefix?: string }
   | { type: 'set_insight_mode'; mode: InsightMode }
@@ -64,6 +70,8 @@ export type SidecarCommand =
       value?: string
     }
   | { type: 'stop' }
+  | WorkspaceResult
+  | WorkspaceStream
 
 export type SidecarMessage =
   | { type: 'ready' }
@@ -99,6 +107,7 @@ export type SidecarMessage =
     }
   | { type: 'error'; requestId?: string; message: string }
   | { type: 'stopped' }
+  | import('../remote/workspaceProtocol').WorkspaceRequest
 
 /**
  * How the open session relates to the file the user actually asked for
