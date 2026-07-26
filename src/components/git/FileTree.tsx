@@ -75,13 +75,7 @@ function NodeName(props: NodeProps, changeType: () => string | undefined) {
     )
   }
   return (
-    <span
-      class={`ftree-name${changeType() ? ` is-changed${changeTypeClass(changeType())}` : ''}`}
-      onDblClick={(e) => {
-        e.stopPropagation()
-        props.startRename(props.node)
-      }}
-    >
+    <span class={`ftree-name${changeType() ? ` is-changed${changeTypeClass(changeType())}` : ''}`}>
       {props.node.name}
     </span>
   )

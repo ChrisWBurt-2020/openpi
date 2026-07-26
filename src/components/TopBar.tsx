@@ -2,7 +2,7 @@
  * TopBar — SolidJS version.
  * Three-zone header: homescreen + new session · session tabs · workspace + git + settings.
  */
-import { GitBranch, House, MonitorCog, Plus } from 'lucide-solid'
+import { GitBranch, Globe2, House, MonitorCog, Plus } from 'lucide-solid'
 import { createEffect, createMemo, createSignal, For, Show } from 'solid-js'
 import type { ModelInfo, SessionListItem } from '../lib/ipc'
 import { isMacPlatform } from '../lib/shortcutFormat'
@@ -10,6 +10,12 @@ import { SessionProgressDot } from './conversation/SessionProgressDot'
 
 interface Props {
   workspaceName: string
+  connection?: {
+    label: string
+    status: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error'
+    latencyMs: number | null
+    executionMode: 'ssh-workspace' | 'persistent-runner'
+  } | null
   gitBranch: string | null
   gitStats?: { added: number; removed: number; untracked: number; changed?: number } | null
   gitUpstream?: string | null
@@ -181,6 +187,24 @@ export function TopBar(props: Props) {
         >
           {props.workspaceName}
         </button>
+
+        <Show when={props.connection}>
+          {(connection) => (
+            <span
+              class="topbar-connection-chip"
+              title={`SSH ${connection().status} · ${connection().executionMode}`}
+            >
+              <Globe2 size={11} />
+              {connection().executionMode === 'ssh-workspace'
+                ? `Local models · ${connection().label}`
+                : `Remote runner · ${connection().label}`}
+              <span class={`connection-status-dot is-${connection().status}`} />
+              <Show when={connection().latencyMs !== null}>
+                <small>{connection().latencyMs}ms</small>
+              </Show>
+            </span>
+          )}
+        </Show>
 
         <Show when={props.gitBranch}>
           {(getBranch) => (

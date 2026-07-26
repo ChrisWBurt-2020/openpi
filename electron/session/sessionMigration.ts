@@ -64,6 +64,58 @@ export function runMigrations(db: Database.Database): void {
       key text primary key,
       value text not null
     );
+
+    create table if not exists insight_notebook (
+      id text primary key,
+      workspace_path text not null,
+      session_path text,
+      tool_call_id text not null,
+      payload_json text not null,
+      created_at text not null,
+      unique(workspace_path, session_path, tool_call_id)
+    );
+
+    create index if not exists idx_insight_notebook_workspace
+      on insight_notebook(workspace_path, created_at desc);
+
+    create table if not exists insight_state (
+      session_path text not null,
+      tool_call_id text not null,
+      dismissed integer not null default 0,
+      primary key(session_path, tool_call_id)
+    );
+
+    create table if not exists remote_connections (
+      id text primary key,
+      label text not null,
+      host text not null,
+      username text not null,
+      port integer not null,
+      identity_file text,
+      host_key_fingerprint text,
+      last_connected_at text,
+      created_at text not null,
+      updated_at text not null
+    );
+
+    create table if not exists remote_connection_credentials (
+      connection_id text not null,
+      provider_id text not null,
+      encrypted_key text not null,
+      primary key(connection_id, provider_id),
+      foreign key(connection_id) references remote_connections(id) on delete cascade
+    );
+
+    create table if not exists remote_projects (
+      connection_id text not null,
+      remote_path text not null,
+      workspace_path text not null unique,
+      default_execution_mode text not null default 'persistent-runner',
+      created_at text not null,
+      primary key(connection_id, remote_path),
+      foreign key(connection_id) references remote_connections(id) on delete cascade,
+      foreign key(workspace_path) references workspaces(path) on delete cascade
+    );
   `)
 
   // Additive migrations — safe to run on existing DBs.
@@ -82,6 +134,11 @@ export function runMigrations(db: Database.Database): void {
     ['session_entries', "add column model text not null default ''"],
     ['session_entries', "add column provider text not null default ''"],
     ['workspaces', 'add column trusted_at text'],
+    [
+      'remote_projects',
+      "add column default_execution_mode text not null default 'persistent-runner'",
+    ],
+    ['sessions', "add column execution_mode text not null default 'local'"],
   ]
 
   for (const [table, clause] of addColumns) {

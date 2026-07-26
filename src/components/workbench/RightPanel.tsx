@@ -3,8 +3,10 @@
  */
 import { createSignal, Show } from 'solid-js'
 import type { GitChangedFile, GitFileDiff, GitSyncAction } from '../../lib/ipc'
+import type { Message } from '../../types/session'
 import { FileTree } from '../git/FileTree'
 import { GitPanel } from '../git/GitPanel'
+import { SignalsPanel } from './SignalsPanel'
 
 interface Props {
   visible: boolean
@@ -21,10 +23,12 @@ interface Props {
   onSyncActionChange?: (action: GitSyncAction | null) => void
   onSyncMessageChange?: (message: string | null) => void
   onOpenHistory?: () => void
+  messages: Message[]
+  sessionPath: string | null
 }
 
 export function RightPanel(props: Props) {
-  const [sidebarTab, setSidebarTab] = createSignal<'changes' | 'files'>('files')
+  const [sidebarTab, setSidebarTab] = createSignal<'changes' | 'files' | 'signals'>('files')
 
   return (
     <div class="rp-container" style={{ width: `${props.width}px` }}>
@@ -46,6 +50,13 @@ export function RightPanel(props: Props) {
             onClick={() => setSidebarTab('files')}
           >
             Files
+          </button>
+          <button
+            type="button"
+            class={`rp-sidebar-tab${sidebarTab() === 'signals' ? ' is-active' : ''}`}
+            onClick={() => setSidebarTab('signals')}
+          >
+            Signals
           </button>
         </div>
 
@@ -72,6 +83,14 @@ export function RightPanel(props: Props) {
               onFileClick={(path) => props.onFileClick(path)}
               onFileDeleted={props.onFileDeleted}
               onFileRenamed={props.onFileRenamed}
+            />
+          </Show>
+          <Show when={sidebarTab() === 'signals'}>
+            <SignalsPanel
+              workspacePath={props.cwd}
+              sessionPath={props.sessionPath}
+              messages={props.messages}
+              onFileClick={props.onFileClick}
             />
           </Show>
         </div>

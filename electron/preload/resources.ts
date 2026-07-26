@@ -1,4 +1,5 @@
 import { ipcRenderer } from 'electron'
+import type { InsightPayload, SavedInsight } from '../../src/lib/insights'
 import type {
   ArchivedSessionItem,
   ArchiveSessionsResult,
@@ -19,6 +20,21 @@ import type {
 import { IPC } from '../../src/lib/ipc'
 
 export const resourcesApi = {
+  insights: {
+    listSaved: (workspacePath: string): Promise<SavedInsight[]> =>
+      ipcRenderer.invoke(IPC.LIST_SAVED_INSIGHTS, { workspacePath }),
+    save: (payload: {
+      workspacePath: string
+      sessionPath: string | null
+      toolCallId: string
+      insight: InsightPayload
+    }): Promise<SavedInsight> => ipcRenderer.invoke(IPC.SAVE_INSIGHT, payload),
+    remove: (id: string): Promise<void> => ipcRenderer.invoke(IPC.REMOVE_SAVED_INSIGHT, { id }),
+    listState: (sessionPath: string): Promise<Record<string, { dismissed: boolean }>> =>
+      ipcRenderer.invoke(IPC.LIST_INSIGHT_STATE, { sessionPath }),
+    setDismissed: (sessionPath: string, toolCallId: string, dismissed: boolean): Promise<void> =>
+      ipcRenderer.invoke(IPC.SET_INSIGHT_DISMISSED, { sessionPath, toolCallId, dismissed }),
+  },
   listPromptTemplates: (): Promise<PromptTemplate[]> =>
     ipcRenderer.invoke(IPC.LIST_PROMPT_TEMPLATES),
 

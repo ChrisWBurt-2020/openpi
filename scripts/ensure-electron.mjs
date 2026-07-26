@@ -72,9 +72,9 @@ async function main() {
     if (v.status !== 0) {
       console.warn(
         '[ensure-electron] --version check failed:',
-        'status=' + v.status,
-        'signal=' + v.signal,
-        'stderr=' + (v.stderr ?? '').trim()
+        `status=${v.status}`,
+        `signal=${v.signal}`,
+        `stderr=${(v.stderr ?? '').trim()}`
       )
     }
     return v.status === 0 && /^v\d/.test((v.stdout ?? '').trim())
@@ -166,10 +166,7 @@ async function main() {
       const files = entries
         .filter((e) => e.isFile())
         .map((e) => path.join(e.path.slice(distDir.length + 1), e.name))
-      console.log(
-        '[ensure-electron] dist files (' + files.length + '):',
-        files.slice(0, 20).join(', ')
-      )
+      console.log(`[ensure-electron] dist files (${files.length}):`, files.slice(0, 20).join(', '))
     } catch {
       /* ok */
     }
@@ -226,7 +223,7 @@ async function main() {
     if (fs.existsSync(executable)) {
       const stat = fs.statSync(executable)
       const mode = stat.mode.toString(8).slice(-3)
-      console.error('[ensure-electron]', executable, 'exists, mode=' + mode)
+      console.error('[ensure-electron]', executable, `exists, mode=${mode}`)
     } else {
       console.error('[ensure-electron]', executable, 'MISSING')
     }

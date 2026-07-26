@@ -1,5 +1,5 @@
 import { ArrowLeft, GitBranch, X } from 'lucide-solid'
-import { createEffect, createMemo, createSignal, Show } from 'solid-js'
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from 'solid-js'
 import type { useAgentReviewChanges } from '../../hooks/useAgentReviewChanges'
 import { useFileContentCache } from '../../hooks/useFileContentCache'
 import { useGitHistoryState } from '../../hooks/useGitHistoryState'
@@ -7,6 +7,7 @@ import type { useOpenPiSession } from '../../hooks/useOpenPiSession'
 import { buildCoreSlashCommands, type CoreSlashCommand } from '../../lib/coreCommands'
 import type { DisplayPreferences } from '../../lib/displayPreferences'
 import type { FileLineComment, NewFileLineComment } from '../../lib/fileLineComments'
+import type { InsightPayload } from '../../lib/insights'
 import type { GitChangedFile, GitFileDiff, ModelInfo, SkillItem } from '../../lib/ipc'
 import { isDiffPreviewTab } from '../../lib/previewTabs'
 import { Composer } from '../Composer'
@@ -76,6 +77,22 @@ export function ConversationWorkspace(props: ConversationWorkspaceProps) {
   const [historyActive, setHistoryActive] = createSignal(false)
   const [reviewSource, setReviewSource] = createSignal<'git' | 'last-turn'>('git')
   let lastReviewChangeCount = 0
+
+  onMount(() => {
+    const askFromInsight = (event: Event) => {
+      const insight = (event as CustomEvent<InsightPayload>).detail
+      if (!insight) return
+      const evidence = insight.evidence
+        .map((item) => (item.type === 'file' ? item.path : item.command))
+        .join(', ')
+      props.session.setInput(
+        `Explain this Pi Signal in more depth and suggest the safest next step:\n\n${insight.title}\n${insight.explanation}\nEvidence: ${evidence}`
+      )
+      document.querySelector<HTMLTextAreaElement>('.composer-textarea')?.focus()
+    }
+    document.addEventListener('openpi:ask-insight', askFromInsight)
+    onCleanup(() => document.removeEventListener('openpi:ask-insight', askFromInsight))
+  })
 
   createEffect(() => {
     if (props.showGitHistory) setHistoryActive(true)

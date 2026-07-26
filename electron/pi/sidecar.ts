@@ -11,20 +11,40 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+// pi-coding-agent does not re-export these auth types; they come straight from
+// pi-ai, which ModelRuntime.login() is defined against (see model-runtime.d.ts).
+import type { AuthEvent, AuthInteraction, AuthPrompt, AuthType } from '@earendil-works/pi-ai'
 import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent'
 import {
-  AuthStorage,
   createAgentSession,
   DefaultResourceLoader,
   ModelRegistry,
+  ModelRuntime,
+  readStoredCredential,
   SessionManager,
   SettingsManager,
 } from '@earendil-works/pi-coding-agent'
+import type { InsightMode } from '../../src/lib/insights'
 import { expandPromptTemplateText } from '../../src/lib/sessionPrompt'
+import type {
+  RemoteWorkspaceDescriptor,
+  WorkspaceResult,
+  WorkspaceStream,
+} from '../remote/workspaceProtocol'
+import { bundledThemePaths } from '../services/bundledThemes'
 import { createOpenPiExtensionUIContext } from './extensionUiContext'
 import { fulfillExtensionUiPending } from './extensionUiPending'
+import { createInsightsExtension } from './insightsExtension'
 import { enforceIgnoreScriptsEnv } from './safePackageManager'
+import { defaultCloneDir, resolveSessionAccess, type SessionAccessDecision } from './sessionAccess'
+import {
+  refreshSessionLock,
+  releaseSessionLock,
+  type SessionLockAcquireResult,
+} from './sessionLock'
+import { defaultBackupDir } from './sessionPreflight'
 import { isStaleExtensionCtxEvent, isStaleExtensionCtxMessage } from './staleCtx'
+import { createWorkspaceExtension, WorkspaceTransportClient } from './workspaceExtension'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -42,13 +62,29 @@ type SessionState = {
 }
 
 let state: SessionState | null = null
-let _authStorage: ReturnType<typeof AuthStorage.create> | null = null
-let _modelRegistry: ReturnType<typeof ModelRegistry.create> | null = null
+let insightMode: InsightMode = 'mentor'
+let _modelRuntime: ModelRuntime | null = null
+let _modelRegistry: ModelRegistry | null = null
+/** Advisory owner lock for the session file we currently have open (ADR-003). */
+let _sessionLock: { lockPath: string; heartbeat: NodeJS.Timeout } | null = null
+/**
+ * Monotonic counter, bumped every time the live session is replaced.
+ *
+ * The sidecar runs exactly one session, so switching threads disposes the old
+ * one and builds a new one. Session events carry no session identity, which
+ * means an event still in flight from the disposed session gets applied to
+ * whatever session is open when it lands — the new thread inherits the old
+ * thread's tail. Stamping every event lets the main process drop anything
+ * from a superseded session.
+ */
+let _sessionEpoch = 0
 let _cachedResourceLoader: {
   cwd: string
   workspaceTrusted: boolean
   loader: InstanceType<typeof DefaultResourceLoader>
 } | null = null
+let _remoteWorkspace: RemoteWorkspaceDescriptor | null = null
+let _workspaceTransport: WorkspaceTransportClient
 const _pendingOAuthPrompts = new Map<string, (v: string) => void>()
 
 // ─── Port ─────────────────────────────────────────────────────────────────────
@@ -83,10 +119,18 @@ if (!maybeParentPort) {
   process.exit(1)
 }
 const parentPort: ParentPort = maybeParentPort
+_workspaceTransport = new WorkspaceTransportClient((message) => parentPort.postMessage(message))
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function send(msg: SidecarMessage): void {
+  // Stamp session traffic centrally rather than at each call site, so a new
+  // emitter added later can't forget to and silently reintroduce cross-thread
+  // event leakage.
+  if (msg.type === 'session_event' || msg.type === 'session_ready') {
+    parentPort.postMessage({ ...msg, epoch: _sessionEpoch })
+    return
+  }
   parentPort.postMessage(msg)
 }
 
@@ -94,23 +138,152 @@ function getAgentDir(): string {
   return path.join(os.homedir(), '.pi', 'agent')
 }
 
-function getAuthStorage() {
+/**
+ * Pi 0.80.8 (Breaking Changes) replaced CreateAgentSessionOptions.authStorage +
+ * modelRegistry with a single async `modelRuntime` option, and made AuthStorage
+ * a private implementation detail (no longer exported). ModelRuntime now owns
+ * credential storage + model catalogs together.
+ *
+ * This MUST stay a singleton for the sidecar's lifetime: extension-registered
+ * providers (added via runtime.registerProvider() during createAgentSession →
+ * bindCore) live on this instance. Recreating it drops them.
+ */
+async function getModelRuntime(): Promise<ModelRuntime> {
+  if (_modelRuntime) return _modelRuntime
   const agentDir = getAgentDir()
-  _authStorage ??= AuthStorage.create(path.join(agentDir, 'auth.json'))
-  return _authStorage
+  _modelRuntime = await ModelRuntime.create({
+    authPath: path.join(agentDir, 'auth.json'),
+    modelsPath: path.join(agentDir, 'models.json'),
+  })
+  return _modelRuntime
 }
 
-function getModelRegistry() {
-  _modelRegistry ??= ModelRegistry.create(getAuthStorage(), path.join(getAgentDir(), 'models.json'))
+/**
+ * ModelRegistry is now a thin synchronous compatibility facade over
+ * ModelRuntime (see @earendil-works/pi-coding-agent's model-registry.d.ts —
+ * "Synchronous compatibility facade exposed to extensions"). It holds no
+ * state beyond a runtime reference, so rebuilding it is cheap; the runtime
+ * itself is what must stay stable.
+ */
+async function getModelRegistry(): Promise<ModelRegistry> {
+  _modelRegistry ??= new ModelRegistry(await getModelRuntime())
   return _modelRegistry
 }
 
-function invalidateModelRegistry(): void {
-  if (_modelRegistry) {
-    // Refresh the existing instance so extension-registered providers
-    // (registered during createAgentSession → bindCore) are preserved.
-    // Nulling + recreating would lose them since extensions only run once.
-    _modelRegistry.refresh()
+async function invalidateModelRegistry(): Promise<void> {
+  // refresh() became async in 0.80.8 (models.json loading is async now).
+  // Every caller must await this before making synchronous registry reads.
+  await (await getModelRegistry()).refresh()
+}
+
+/**
+ * Preset-answer AuthInteraction for set_provider_key.
+ *
+ * ModelRuntime.login(providerId, 'api_key', interaction) is now the only
+ * persisted write path for an api-key credential (0.80.8 removed
+ * AuthStorage.set()). The renderer already collected the key via its own
+ * form before sending `set_provider_key`, so this interaction must not
+ * round-trip back to the renderer for it — it just hands the key straight
+ * back the first time ApiKeyAuth.login() calls prompt(), and no-ops on
+ * everything else (checks/notifications the built-in api-key flow may emit).
+ */
+function buildPresetKeyAuthInteraction(apiKey: string): AuthInteraction {
+  let answered = false
+  return {
+    async prompt(_prompt: AuthPrompt): Promise<string> {
+      // Only the first prompt should get the real key; a well-behaved
+      // api-key login() asks exactly once, but don't loop forever if it asks again.
+      if (answered) return ''
+      answered = true
+      return apiKey
+    },
+    notify(_event: AuthEvent): void {
+      // No renderer round-trip for the preset-key flow.
+    },
+  }
+}
+
+/**
+ * Fully interactive AuthInteraction for login_provider (OAuth device-code /
+ * browser flows, or an api-key flow that itself wants to prompt).
+ *
+ * Maps the new AuthInteraction callbacks onto the sidecar's existing
+ * `provider_login_event` IPC channel and the `_pendingOAuthPrompts`
+ * resolver map, so the renderer-side login UI (built against the old
+ * onAuth/onProgress/onPrompt/onSelect/onDeviceCode shape) keeps working
+ * without changes.
+ */
+function buildInteractiveAuthInteraction(requestId: string, providerId: string): AuthInteraction {
+  return {
+    async prompt(prompt: AuthPrompt): Promise<string> {
+      if (prompt.type === 'select') {
+        send({
+          type: 'provider_login_event',
+          requestId,
+          event: {
+            type: 'select',
+            message: prompt.message,
+            options: prompt.options.map((o) => ({ id: o.id, label: o.label })),
+          },
+        })
+      } else {
+        // 'text' | 'secret' | 'manual_code' all render as a single text prompt
+        // in the existing renderer UI; it doesn't distinguish secret masking
+        // today, which is a pre-existing limitation, not one this port adds.
+        send({
+          type: 'provider_login_event',
+          requestId,
+          event: { type: 'prompt', message: prompt.message, placeholder: prompt.placeholder },
+        })
+      }
+      return new Promise<string>((resolve, reject) => {
+        _pendingOAuthPrompts.set(providerId, (v) => resolve(v))
+        prompt.signal?.addEventListener('abort', () => {
+          _pendingOAuthPrompts.delete(providerId)
+          reject(new Error('Prompt aborted'))
+        })
+      })
+    },
+    notify(event: AuthEvent): void {
+      switch (event.type) {
+        case 'auth_url':
+          send({
+            type: 'provider_login_event',
+            requestId,
+            event: { type: 'auth', url: event.url, instructions: event.instructions },
+          })
+          break
+        case 'device_code':
+          send({
+            type: 'provider_login_event',
+            requestId,
+            event: {
+              type: 'device_code',
+              verificationUri: event.verificationUri,
+              userCode: event.userCode,
+              intervalSeconds: event.intervalSeconds,
+              expiresInSeconds: event.expiresInSeconds,
+            },
+          })
+          break
+        case 'progress':
+          send({
+            type: 'provider_login_event',
+            requestId,
+            event: { type: 'progress', message: event.message },
+          })
+          break
+        case 'info':
+          // No dedicated 'info' bucket in the existing renderer event union;
+          // surface it as progress rather than drop it silently.
+          send({
+            type: 'provider_login_event',
+            requestId,
+            event: { type: 'progress', message: event.message },
+          })
+          break
+      }
+    },
   }
 }
 
@@ -212,18 +385,23 @@ function buildSidecarPromptText(
 
 async function getResourceLoader(cwd: string, workspaceTrusted: boolean) {
   const agentDir = getAgentDir()
+  // A canonical ssh:// identity must never be interpreted as a Windows path.
+  // Remote project resources are supplied through the transport layer; until
+  // then load only trusted local/global Pi resources here.
+  const loaderCwd = _remoteWorkspace ? agentDir : cwd
   if (
     _cachedResourceLoader &&
-    _cachedResourceLoader.cwd === cwd &&
+    _cachedResourceLoader.cwd === loaderCwd &&
     _cachedResourceLoader.workspaceTrusted === workspaceTrusted
   ) {
     return _cachedResourceLoader.loader
   }
 
-  const fileSettingsManager = SettingsManager.create(cwd, agentDir)
-  const settingsManager = workspaceTrusted
-    ? fileSettingsManager
-    : SettingsManager.inMemory(fileSettingsManager.getGlobalSettings())
+  const fileSettingsManager = SettingsManager.create(loaderCwd, agentDir)
+  const settingsManager =
+    workspaceTrusted && !_remoteWorkspace
+      ? fileSettingsManager
+      : SettingsManager.inMemory(fileSettingsManager.getGlobalSettings())
   // When the workspace is not yet trusted, project-local extensions (.pi/extensions)
   // are blocked by noExtensions=true — they're unknown third-party code.
   // Global extensions (~/.pi/agent/extensions) are the user's own trusted code and
@@ -238,11 +416,17 @@ async function getResourceLoader(cwd: string, workspaceTrusted: boolean) {
   // to jiti.import() a directory.
   const noExtensions = !workspaceTrusted
   const loader = new DefaultResourceLoader({
-    cwd,
+    cwd: loaderCwd,
     agentDir,
     settingsManager,
     noExtensions,
     additionalExtensionPaths: noExtensions ? [agentDir] : [],
+    additionalThemePaths: bundledThemePaths(),
+    extensionFactories: [
+      createInsightsExtension(() => insightMode),
+      createWorkspaceExtension(() => _remoteWorkspace, _workspaceTransport),
+    ],
+    noContextFiles: Boolean(_remoteWorkspace),
   })
   try {
     await loader.reload()
@@ -253,7 +437,7 @@ async function getResourceLoader(cwd: string, workspaceTrusted: boolean) {
       `[packages] One or more Pi packages failed to install and were skipped: ${msg}`
     )
   }
-  _cachedResourceLoader = { cwd, workspaceTrusted, loader }
+  _cachedResourceLoader = { cwd: loaderCwd, workspaceTrusted, loader }
   return loader
 }
 
@@ -281,6 +465,63 @@ async function emitSessionShutdown(
   }
 }
 
+/** Heartbeat cadence. Must be well under sessionLock's DEFAULT_STALE_MS. */
+const SESSION_LOCK_HEARTBEAT_MS = 30_000
+
+function dropSessionLock(): void {
+  if (!_sessionLock) return
+  clearInterval(_sessionLock.heartbeat)
+  releaseSessionLock(_sessionLock.lockPath)
+  _sessionLock = null
+}
+
+/**
+ * Adopt a lock already acquired by resolveSessionAccess() and start its
+ * heartbeat, so the lock we hold always matches the file we actually opened.
+ *
+ * The lock is advisory: terminal Pi doesn't participate. What resolves a real
+ * conflict is the access decision (detached copy), not this lock — see
+ * sessionAccess.ts and ADR-005 on not overstating what a mechanism enforces.
+ */
+function adoptSessionLock(result: SessionLockAcquireResult | null): void {
+  if (!result?.acquired) return
+  const heartbeat = setInterval(() => {
+    refreshSessionLock(result.lockPath)
+  }, SESSION_LOCK_HEARTBEAT_MS)
+  // Never hold the sidecar's event loop open just for a heartbeat.
+  heartbeat.unref?.()
+  _sessionLock = { lockPath: result.lockPath, heartbeat }
+}
+
+/** How long to wait for an aborted thread to come to rest before moving on. */
+const SETTLE_TIMEOUT_MS = 5_000
+
+/**
+ * Bring a session to rest before it is disposed.
+ *
+ * Best-effort on purpose: this runs on the path that opens the thread the user
+ * just asked for, so a session that refuses to settle must not block them.
+ * We abort, wait briefly, then proceed regardless — a stuck outgoing thread
+ * costs a leaked stream; blocking here would cost the user their click.
+ */
+async function settleSessionBeforeSwitch(
+  session: Awaited<ReturnType<typeof createAgentSession>>['session']
+): Promise<void> {
+  try {
+    const streaming =
+      (session.agent as unknown as { state?: { isStreaming?: boolean } }).state?.isStreaming ??
+      false
+    if (!streaming) return
+    await session.abort()
+    await Promise.race([
+      session.agent.waitForIdle(),
+      new Promise((resolve) => setTimeout(resolve, SETTLE_TIMEOUT_MS)),
+    ])
+  } catch {
+    // Never let a failure to settle block opening the requested thread.
+  }
+}
+
 async function startSession(
   cwd: string,
   opts: {
@@ -288,11 +529,22 @@ async function startSession(
     forkEntryId?: string
     requestId?: string
     workspaceTrusted?: boolean
+    remoteWorkspace?: RemoteWorkspaceDescriptor
   } = {}
 ): Promise<void> {
+  // Anything still in flight from here on belongs to a session the user has
+  // moved on from. Bump first so late events are already stale by the time
+  // teardown starts.
+  _sessionEpoch += 1
+
   // Dispose previous session — emit session_shutdown first so extensions
   // (e.g. pi-task polling) clear timers and drop captured `pi` before ctx invalidates.
   if (state) {
+    // Settle the outgoing thread before tearing it down. Switching mid-response
+    // used to dispose a session with a live model stream and in-flight tool
+    // calls still attached to it; those then completed against a disposed
+    // session. Abort, then wait for the agent loop to actually come to rest.
+    await settleSessionBeforeSwitch(state.session)
     state.unsubscribe()
     const shutdownReason: 'new' | 'resume' | 'fork' = opts.forkEntryId
       ? 'fork'
@@ -304,16 +556,48 @@ async function startSession(
     state = null
   }
 
+  _remoteWorkspace = opts.remoteWorkspace ?? null
   const agentDir = getAgentDir()
-  const authStorage = getAuthStorage()
-  const modelRegistry = getModelRegistry()
-  const fileSettingsManager = SettingsManager.create(cwd, agentDir)
+  const modelRuntime = await getModelRuntime()
+  const fileSettingsManager = SettingsManager.create(_remoteWorkspace ? agentDir : cwd, agentDir)
   const workspaceTrusted = opts.workspaceTrusted ?? false
-  const settingsManager = workspaceTrusted
-    ? fileSettingsManager
-    : SettingsManager.inMemory(fileSettingsManager.getGlobalSettings())
-  let sessionManager = opts.sessionFile
-    ? SessionManager.open(opts.sessionFile, undefined, cwd)
+  const settingsManager =
+    workspaceTrusted && !_remoteWorkspace
+      ? fileSettingsManager
+      : SettingsManager.inMemory(fileSettingsManager.getGlobalSettings())
+  // ADR-003: never open a shared session file blind. resolveSessionAccess()
+  // runs the format-version preflight and takes the advisory owner lock, and
+  // returns what we may actually open — falling back to a detached copy when
+  // the requested file is unsafe to write, rather than detecting the conflict
+  // and then racing anyway.
+  let openPath = opts.sessionFile
+  let access: SessionAccessDecision | null = null
+  if (opts.sessionFile) {
+    dropSessionLock()
+    access = resolveSessionAccess(opts.sessionFile, {
+      backupDir: defaultBackupDir(agentDir),
+      cloneDir: defaultCloneDir(agentDir),
+    })
+    for (const message of access.messages) {
+      outputLine(access.mode === 'read-write' ? 'info' : 'warn', message)
+    }
+    if (access.mode === 'blocked') {
+      send({
+        type: 'session_error',
+        requestId: opts.requestId,
+        message: access.messages.join(' '),
+        code: 'session_access_blocked',
+      })
+      return
+    }
+    openPath = access.openPath ?? opts.sessionFile
+    adoptSessionLock(access.lock)
+  } else {
+    dropSessionLock()
+  }
+
+  let sessionManager = openPath
+    ? SessionManager.open(openPath, undefined, cwd)
     : SessionManager.create(cwd)
 
   if (opts.sessionFile && opts.forkEntryId) {
@@ -329,8 +613,7 @@ async function startSession(
     cwd,
     agentDir,
     sessionManager,
-    authStorage,
-    modelRegistry,
+    modelRuntime,
     settingsManager,
     resourceLoader,
   })
@@ -436,6 +719,17 @@ async function startSession(
         }
       : null,
     thinkingLevel: (session.thinkingLevel as string | undefined) ?? null,
+    // ADR-003: tell the renderer when it is NOT looking at the file the user
+    // asked for. Silently working in a detached copy would be worse than the
+    // race it prevents.
+    access: access
+      ? {
+          mode: access.mode,
+          requestedSessionFile: access.requestedPath,
+          reasons: access.reasons,
+          messages: access.messages,
+        }
+      : { mode: 'read-write', requestedSessionFile: null, reasons: [], messages: [] },
   }
 
   send({ type: 'session_ready', requestId: opts.requestId, payload })
@@ -444,11 +738,20 @@ async function startSession(
 // ─── Command handler ────────────────────────────────────────────────────────────
 
 parentPort.on('message', (message) => {
-  const cmd = (
+  const incoming =
     message && typeof message === 'object' && 'data' in message
       ? (message as { data: unknown }).data
       : message
-  ) as SidecarCommand
+  if (
+    incoming &&
+    typeof incoming === 'object' &&
+    ((incoming as { type?: string }).type === 'workspace_result' ||
+      (incoming as { type?: string }).type === 'workspace_stream')
+  ) {
+    _workspaceTransport.receive(incoming as WorkspaceResult | WorkspaceStream)
+    return
+  }
+  const cmd = incoming as SidecarCommand
   void handleCommand(cmd).catch((err) => {
     send({
       type: 'error',
@@ -467,6 +770,7 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
           forkEntryId: cmd.forkEntryId,
           requestId: cmd.requestId,
           workspaceTrusted: cmd.workspaceTrusted,
+          remoteWorkspace: cmd.remoteWorkspace,
         })
       } catch (err) {
         send({
@@ -475,6 +779,11 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
           message: err instanceof Error ? err.message : String(err),
         })
       }
+      break
+    }
+
+    case 'set_insight_mode': {
+      insightMode = cmd.mode
       break
     }
 
@@ -614,7 +923,7 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
 
     case 'set_model': {
       if (!state) return
-      const model = getModelRegistry().find(cmd.provider, cmd.modelId)
+      const model = (await getModelRegistry()).find(cmd.provider, cmd.modelId)
       if (!model) return
       await state.session.setModel(model)
       break
@@ -865,7 +1174,7 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
     }
 
     case 'get_models': {
-      const models = await getModelRegistry().getAvailable()
+      const models = await (await getModelRegistry()).getAvailable()
       const mapped = (
         models as Array<{
           id: string
@@ -943,17 +1252,20 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
     }
 
     case 'get_providers': {
-      const registry = getModelRegistry()
+      const registry = await getModelRegistry()
       const allModels = registry.getAll() as Array<{ provider: string }>
       const providerModelCounts = new Map<string, number>()
       for (const m of allModels) {
         providerModelCounts.set(m.provider, (providerModelCounts.get(m.provider) ?? 0) + 1)
       }
+      const authPath = path.join(getAgentDir(), 'auth.json')
       const providers = []
       for (const [providerId, count] of providerModelCounts) {
         const status = registry.getProviderAuthStatus(providerId)
         const displayName = registry.getProviderDisplayName(providerId)
-        const cred = getAuthStorage().get(providerId)
+        // readStoredCredential is the retained one-off *synchronous* read helper
+        // now that AuthStorage itself is a private implementation detail (0.80.8+).
+        const cred = readStoredCredential(providerId, authPath)
         const credentialType =
           cred?.type === 'oauth'
             ? 'oauth'
@@ -976,86 +1288,45 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
     }
 
     case 'set_provider_key': {
-      getAuthStorage().set(cmd.provider, { type: 'api_key', key: cmd.apiKey })
-      invalidateModelRegistry()
+      // AuthStorage.set() is gone in 0.80.8; ModelRuntime.login(providerId,
+      // 'api_key', interaction) is the persisted write path now. The key is
+      // already known (renderer collected it), so hand it back via a
+      // preset-answer interaction rather than round-tripping a prompt.
+      const runtime = await getModelRuntime()
+      await runtime.login(cmd.provider, 'api_key', buildPresetKeyAuthInteraction(cmd.apiKey))
+      await invalidateModelRegistry()
       break
     }
 
     case 'remove_provider_key': {
-      getAuthStorage().remove(cmd.provider)
-      invalidateModelRegistry()
+      // logout() is the persisted removal path. (removeRuntimeApiKey() is
+      // explicitly non-persisted per model-runtime.d.ts — runtime-only override.)
+      await (await getModelRuntime()).logout(cmd.provider)
+      await invalidateModelRegistry()
       break
     }
 
     case 'invalidate_models': {
-      invalidateModelRegistry()
+      await invalidateModelRegistry()
       break
     }
 
     case 'login_provider': {
       try {
-        await getAuthStorage().login(cmd.providerId, {
-          onAuth: ({ url, instructions }: { url: string; instructions?: string }) => {
-            send({
-              type: 'provider_login_event',
-              requestId: cmd.requestId,
-              event: { type: 'auth', url, instructions },
-            })
-          },
-          onProgress: (message: string) => {
-            send({
-              type: 'provider_login_event',
-              requestId: cmd.requestId,
-              event: { type: 'progress', message },
-            })
-          },
-          onPrompt: (prompt: {
-            message: string
-            placeholder?: string
-            allowEmpty?: boolean
-          }): Promise<string> => {
-            send({
-              type: 'provider_login_event',
-              requestId: cmd.requestId,
-              event: { type: 'prompt', ...prompt },
-            })
-            return new Promise<string>((resolve) => {
-              _pendingOAuthPrompts.set(cmd.providerId, resolve)
-            })
-          },
-          onSelect: (selectPrompt: {
-            message: string
-            options: { id: string; label: string }[]
-          }): Promise<string | undefined> => {
-            send({
-              type: 'provider_login_event',
-              requestId: cmd.requestId,
-              event: { type: 'select', ...selectPrompt },
-            })
-            return new Promise<string | undefined>((resolve) => {
-              _pendingOAuthPrompts.set(cmd.providerId, (v) => resolve(v || undefined))
-            })
-          },
-          onDeviceCode: (info: {
-            userCode: string
-            verificationUri: string
-            intervalSeconds?: number
-            expiresInSeconds?: number
-          }) => {
-            send({
-              type: 'provider_login_event',
-              requestId: cmd.requestId,
-              event: {
-                type: 'device_code',
-                verificationUri: info.verificationUri,
-                userCode: info.userCode,
-                intervalSeconds: info.intervalSeconds,
-                expiresInSeconds: info.expiresInSeconds,
-              },
-            })
-          },
-        })
-        invalidateModelRegistry()
+        const runtime = await getModelRuntime()
+        // sidecarTypes.ts's login_provider command doesn't carry an AuthType
+        // (pre-dates the 0.80.8 login() signature). Auto-detect from the
+        // provider's registered auth methods, preferring OAuth when a
+        // provider offers both — matches prior UX where OAuth was the primary
+        // "login" action and api-key was a separate "set key" field.
+        const provider = runtime.getProvider(cmd.providerId)
+        const authType: AuthType = provider?.auth.oauth ? 'oauth' : 'api_key'
+        await runtime.login(
+          cmd.providerId,
+          authType,
+          buildInteractiveAuthInteraction(cmd.requestId, cmd.providerId)
+        )
+        await invalidateModelRegistry()
         send({ type: 'provider_login_event', requestId: cmd.requestId, event: { type: 'success' } })
       } catch (err) {
         send({
@@ -1068,8 +1339,8 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
     }
 
     case 'logout_provider': {
-      getAuthStorage().logout(cmd.providerId)
-      invalidateModelRegistry()
+      await (await getModelRuntime()).logout(cmd.providerId)
+      await invalidateModelRegistry()
       break
     }
 
@@ -1099,6 +1370,9 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
         state.session.dispose()
         state = null
       }
+      // Release the advisory owner lock on clean shutdown so the next opener
+      // doesn't have to wait out the staleness window (ADR-003).
+      dropSessionLock()
       send({ type: 'stopped' })
       setTimeout(() => process.exit(0), 100)
       break

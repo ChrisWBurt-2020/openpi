@@ -1,3 +1,10 @@
+import type { InsightMode } from '../../src/lib/insights'
+import type {
+  RemoteWorkspaceDescriptor,
+  WorkspaceResult,
+  WorkspaceStream,
+} from '../remote/workspaceProtocol'
+
 /**
  * piSidecarTypes.ts — Shared types for the Pi SDK sidecar process.
  *
@@ -16,8 +23,10 @@ export type SidecarCommand =
       forkEntryId?: string
       requestId?: string
       workspaceTrusted?: boolean
+      remoteWorkspace?: RemoteWorkspaceDescriptor
     }
   | { type: 'prompt'; text: string; contextPrefix?: string }
+  | { type: 'set_insight_mode'; mode: InsightMode }
   | { type: 'steer'; text: string; contextPrefix?: string }
   | { type: 'follow_up'; text: string; contextPrefix?: string }
   | { type: 'list_prompt_templates'; requestId: string; cwd?: string; workspaceTrusted?: boolean }
@@ -61,11 +70,17 @@ export type SidecarCommand =
       value?: string
     }
   | { type: 'stop' }
+  | WorkspaceResult
+  | WorkspaceStream
 
 export type SidecarMessage =
   | { type: 'ready' }
-  | { type: 'session_ready'; requestId?: string; payload: SessionReadyPayload }
-  | { type: 'session_event'; event: Record<string, unknown> }
+  // `epoch` is stamped by the sidecar's send() on session traffic. It counts
+  // session replacements, so main can discard events emitted by a session the
+  // user has already switched away from — without it, a late event from the
+  // outgoing thread lands in the incoming one.
+  | { type: 'session_ready'; requestId?: string; payload: SessionReadyPayload; epoch?: number }
+  | { type: 'session_event'; event: Record<string, unknown>; epoch?: number }
   | { type: 'session_error'; requestId?: string; message: string; code?: string }
   | { type: 'session_index_updated' }
   | { type: 'stats_result'; requestId: string; stats: Record<string, unknown> }
@@ -92,10 +107,28 @@ export type SidecarMessage =
     }
   | { type: 'error'; requestId?: string; message: string }
   | { type: 'stopped' }
+  | import('../remote/workspaceProtocol').WorkspaceRequest
+
+/**
+ * How the open session relates to the file the user actually asked for
+ * (ADR-003). 'read-write' is the normal case. 'cloned' means the requested
+ * file was unsafe to write — newer session format, unreadable header, or
+ * another process holding the advisory lock — so a detached copy was opened
+ * instead and edits will NOT flow back to `requestedSessionFile`.
+ */
+export type SessionAccessInfo = {
+  mode: 'read-write' | 'cloned' | 'blocked'
+  /** The file the user asked for. Null for brand-new sessions. */
+  requestedSessionFile: string | null
+  reasons: string[]
+  /** Ready-to-display explanations. */
+  messages: string[]
+}
 
 export type SessionReadyPayload = {
   cwd: string
   sessionFile: string | null
+  access: SessionAccessInfo
   sessionId: string | null
   sessionName: string | null
   model: {

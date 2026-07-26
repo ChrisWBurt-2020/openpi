@@ -1,4 +1,9 @@
-import { getModel, getProviders } from '@earendil-works/pi-ai'
+// 0.80.8+ removed the free-standing getModel()/getProviders() convenience
+// wrappers (they're now Models-instance methods requiring a runtime — see
+// model-runtime.d.ts). getBuiltinModel()/getBuiltinProviders() are the
+// still-static, auth-free generated-catalog reads this renderer-side pricing
+// lookup actually wants (no ModelRuntime/credentials available here).
+import { getBuiltinModel, getBuiltinProviders } from '@earendil-works/pi-ai/providers/all'
 import type { UsageModelBucket } from '../../lib/ipc'
 
 /** USD per 1M tokens (pi-ai model catalog). */
@@ -12,7 +17,7 @@ export type TokenRates = {
 const M = 1_000_000
 
 export function warmUsagePricingCatalog(): void {
-  getProviders()
+  getBuiltinProviders()
 }
 
 export function resolveTokenRatesSync(modelId: string, provider?: string): TokenRates | null {
@@ -24,7 +29,7 @@ export function resolveTokenRatesSync(modelId: string, provider?: string): Token
     candidates.push({ provider, id })
     if (!id.includes('/')) candidates.push({ provider, id: `${provider}/${id}` })
   }
-  for (const p of getProviders()) {
+  for (const p of getBuiltinProviders()) {
     candidates.push({ provider: p, id })
     if (id.includes('/')) {
       const tail = id.split('/').pop()
@@ -37,7 +42,10 @@ export function resolveTokenRatesSync(modelId: string, provider?: string): Token
     const key = `${c.provider}:${c.id}`
     if (seen.has(key)) continue
     seen.add(key)
-    const model = getModel(c.provider as Parameters<typeof getModel>[0], c.id as never)
+    const model = getBuiltinModel(
+      c.provider as Parameters<typeof getBuiltinModel>[0],
+      c.id as never
+    )
     if (model?.cost) return model.cost
   }
   return null

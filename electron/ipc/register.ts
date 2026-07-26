@@ -6,6 +6,7 @@ import { registerExtensionUiHandlers } from '../pi/extensionUiHost'
 import { registerProviderHandlers } from '../pi/providerHost'
 import type { SidecarCommand, SidecarMessage } from '../pi/sidecar'
 import { checkPiUpdate, installPiUpdate } from '../pi/updater'
+import type { RemoteConnectionManager } from '../remote/connectionManager'
 import type * as CustomizationsHost from '../services/customizations'
 import type * as FffHost from '../services/fffHost'
 import { emitSessionError, playSoundEffectId } from '../services/notificationHost'
@@ -47,8 +48,10 @@ import { registerAgentReviewIpc } from './agentReview'
 import { registerCustomizationsIpc } from './customizations'
 import { registerDiagnosticsIpc } from './diagnostics'
 import { registerFileIpc } from './files'
+import { registerInsightsIpc } from './insights'
 import { registerPreferencesIpc } from './preferences'
 import { registerPtyIpc } from './pty'
+import { registerRemoteIpc } from './remote'
 import { registerResourcesIpc } from './resources'
 import { registerSearchIpc } from './search'
 import { registerSettingsIpc } from './settings'
@@ -65,6 +68,7 @@ interface RegisterMainIpcHandlersDeps {
   getMainWindow: () => BrowserWindow | null
   outputBuffer: OutputLine[]
   getSessionIndex: () => SessionIndexStore | null
+  getRemoteConnections: () => RemoteConnectionManager | null
   getCustomizationsHost: () => Promise<typeof CustomizationsHost>
   getFffHost: () => Promise<typeof FffHost>
   ensureFffInitialized: (cwd: string) => Promise<typeof FffHost | null>
@@ -125,6 +129,16 @@ export function registerMainIpcHandlers(deps: RegisterMainIpcHandlersDeps): void
     ipcMain: deps.ipcMain,
     getPref: (key) => deps.getSessionIndex()?.getPref(key) ?? null,
     setPref: (key, value) => deps.getSessionIndex()?.setPref(key, value),
+  })
+  registerInsightsIpc({
+    ipcMain: deps.ipcMain,
+    getSessionIndex: deps.getSessionIndex,
+  })
+  registerRemoteIpc({
+    ipcMain: deps.ipcMain,
+    getMainWindow: deps.getMainWindow,
+    getSessionIndex: deps.getSessionIndex,
+    getRemoteConnections: deps.getRemoteConnections,
   })
   registerSoundIpc({ ipcMain: deps.ipcMain, playSoundEffectId })
   registerWorkbenchIpc({

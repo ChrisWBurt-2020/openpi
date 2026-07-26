@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Concurrent live chats** — keeps up to three Pi sidecar workers alive, routes events by thread identity, and preserves each chat's transcript, queue, model, thinking, context, shell, and streaming state while another chat is visible.
+- **Sidebar activity and hover details** — running chats show an animated indicator, and hovering a chat shows its project, model, message count, and update time.
+
+### Fixed
+
+- **Cross-project chat visibility** — the persistent sidebar now uses an all-project session index, so selecting another project no longer hides existing chats or requires creating a new chat to restore them.
+- **Concurrent event isolation** — background events, session-start races, crashes, Git/review effects, and shutdown cleanup stay scoped to their originating thread.
+
 ## [0.2.4] - 2026-06-30
 
 - ### Added
@@ -554,4 +564,3 @@ Initial public beta for early testers.
 - Move the "Default Trust Policy" select to the Pi Settings Pane (where it loads and saves through the same `~/.pi/agent/settings.json` path as every other Pi setting) and remove the "Hide Customizations Panel" toggle that gated access to the very modal that hosts the toggle.
 - `/name` without an argument now pre-fills the composer with `/name ` instead of showing a system alert dialog, matching Pi TUI's slash-command UX.
 - `/resume` opens the homescreen overlay (the natural place to browse and resume sessions) rather than the command palette or a broken direct-open.
-

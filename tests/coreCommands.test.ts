@@ -31,6 +31,7 @@ describe('core slash commands', () => {
       [
         'compact',
         'copy',
+        'insights',
         'login',
         'logout',
         'model',
@@ -41,6 +42,7 @@ describe('core slash commands', () => {
         'scoped-models',
         'session',
         'settings',
+        'signals',
         'thinking',
       ].sort()
     )

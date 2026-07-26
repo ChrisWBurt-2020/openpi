@@ -4,13 +4,13 @@ import path from 'node:path'
 import { app, type BrowserWindow } from 'electron'
 import type { RemoteSessionUpdate } from '../../src/lib/ipc'
 import { IPC } from '../../src/lib/ipc'
-import type { PiSidecarHost } from '../pi/sidecarHost'
+import type { PiWorkerHost } from '../pi/workerHost'
 import type { SessionIndexStore } from '../session/sessionIndex'
 
 interface StatusWatcherDeps {
   getMainWindow: () => BrowserWindow | null
   getSessionIndex: () => SessionIndexStore | null
-  getPiSidecarHost: () => PiSidecarHost | null
+  getPiSidecarHost: () => PiWorkerHost | null
   checkForAppUpdate: () => Promise<unknown>
 }
 

@@ -34,6 +34,7 @@ interface WorkspacesIpcDeps {
 export function registerWorkspacesIpc(deps: WorkspacesIpcDeps): void {
   deps.ipcMain.handle(IPC.GET_GIT_BRANCH, async (_event, raw: unknown): Promise<GitBranchInfo> => {
     const { cwd } = gitBranchSchema.parse(raw)
+    if (cwd.startsWith('ssh://')) return { branch: null }
     try {
       const { default: simpleGit } = await import('simple-git')
       const branch = await simpleGit({ baseDir: cwd }).branch()
@@ -47,6 +48,14 @@ export function registerWorkspacesIpc(deps: WorkspacesIpcDeps): void {
     IPC.GET_WORKSPACE_SUMMARY,
     async (_event, raw: unknown): Promise<WorkspaceSummaryInfo> => {
       const { cwd } = workspaceSummaryRequestSchema.parse(raw)
+      if (cwd.startsWith('ssh://')) {
+        return workspaceSummaryInfoSchema.parse({
+          cwd,
+          displayName: cwd.split('/').filter(Boolean).at(-1) ?? cwd,
+          branch: null,
+          lastModifiedAt: null,
+        })
+      }
       const git = await deps.getGitHost()
       return workspaceSummaryInfoSchema.parse(await git.getWorkspaceSummary(cwd))
     }

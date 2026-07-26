@@ -19,11 +19,8 @@ import type {
   ModelInfo,
   SessionEvent,
   SessionListItem,
-  SessionReady,
-  SessionStats,
   WorkspaceSummaryInfo,
 } from '../lib/ipc'
-import { applySessionEvent } from '../lib/sessionEvents'
 import { buildSessionPromptPayload, buildSessionPromptText } from '../lib/sessionPrompt'
 import { isSubSessionPath } from '../lib/subSessionNavigation'
 import {
@@ -32,8 +29,13 @@ import {
   type TaskHistoryEntry,
 } from '../lib/taskHistory'
 import { isValidPiTaskId } from '../lib/taskToolHelpers'
-import type { Message, ToolCard } from '../types/session'
-import { useAgentRunMetrics } from './useAgentRunMetrics'
+import {
+  applyThreadSessionEvent,
+  applyThreadSessionReady,
+  type ThreadQueueMode,
+  type ThreadSessionSnapshot,
+} from '../lib/threadSessionState'
+import type { ToolCard } from '../types/session'
 import { useExtensionTrackers } from './useExtensionTrackers'
 
 function taskHistorySignature(entries: TaskHistoryEntry[]): string {
@@ -52,37 +54,89 @@ interface ParentStackEntry {
 export { isSubSessionPath }
 
 import { useRemoteSessionSync } from './useRemoteSessionSync'
-import { useSessionHistory } from './useSessionHistory'
 import { useSessionIndex } from './useSessionIndex'
 import { useSubagentFileTracker } from './useSubagentFileTracker'
 
-export type QueueMode = 'prompt' | 'steer' | 'followup'
+const HISTORY_PAGE_LIMIT = 200
+
+export type QueueMode = ThreadQueueMode
 
 export { buildSessionPromptText }
 
 export function useOpenPiSession() {
   // ── Core session state ────────────────────────────────────────────────────
-  const [ready, setReady] = createSignal<SessionReady | null>(null)
-  const [messages, setMessages] = createSignal<Message[]>([])
-  const [isStreaming, setIsStreaming] = createSignal(false)
-  const [isShellRunning, setIsShellRunning] = createSignal(false)
+  const snapshots = new Map<string, ThreadSessionSnapshot>()
+  const [activeThreadId, setActiveThreadId] = createSignal<string | null>(null)
+  const [snapshotRevision, setSnapshotRevision] = createSignal(0)
+  const [transportError, setTransportError] = createSignal<string | null>(null)
+  const selectedSnapshot = createMemo(() => {
+    snapshotRevision()
+    const threadId = activeThreadId()
+    return threadId ? (snapshots.get(threadId) ?? null) : null
+  })
+  const ready = () => selectedSnapshot()?.ready ?? null
+  const messages = () => selectedSnapshot()?.messages ?? []
+  const isStreaming = () => selectedSnapshot()?.isStreaming ?? false
+  const isShellRunning = () => selectedSnapshot()?.isShellRunning ?? false
+  const error = () => selectedSnapshot()?.error ?? transportError()
+  const queueMode = () => selectedSnapshot()?.queueMode ?? 'prompt'
+  const currentModel = () => selectedSnapshot()?.currentModel ?? null
+  const thinkingLevel = () => selectedSnapshot()?.thinkingLevel ?? 'medium'
+  const steeringQueue = () => selectedSnapshot()?.steeringQueue ?? []
+  const followUpQueue = () => selectedSnapshot()?.followUpQueue ?? []
+  const sessionName = () => selectedSnapshot()?.sessionName ?? null
+  const contextPercent = () => selectedSnapshot()?.contextPercent ?? null
+  const sessionStats = () => selectedSnapshot()?.sessionStats ?? null
+
+  const commitSnapshot = (threadId: string, snapshot: ThreadSessionSnapshot) => {
+    snapshots.set(threadId, snapshot)
+    setSnapshotRevision((revision) => revision + 1)
+  }
+  const updateThread = (
+    threadId: string,
+    update: (snapshot: ThreadSessionSnapshot) => ThreadSessionSnapshot
+  ) => {
+    const previous = snapshots.get(threadId)
+    if (!previous) return
+    const next = update(previous)
+    if (next !== previous) commitSnapshot(threadId, next)
+  }
+  const updateSelected = (
+    update: (snapshot: ThreadSessionSnapshot) => ThreadSessionSnapshot
+  ): void => {
+    const threadId = activeThreadId()
+    if (threadId) updateThread(threadId, update)
+  }
+  const setError = (
+    value: string | null | ((previous: string | null) => string | null)
+  ): string | null => {
+    let result = error()
+    updateSelected((snapshot) => {
+      result = typeof value === 'function' ? value(snapshot.error) : value
+      return snapshot.error === result ? snapshot : { ...snapshot, error: result }
+    })
+    if (result === null) setTransportError(null)
+    return result
+  }
+  const setQueueMode = (value: QueueMode | ((previous: QueueMode) => QueueMode)): QueueMode => {
+    let result = queueMode()
+    updateSelected((snapshot) => {
+      result = typeof value === 'function' ? value(snapshot.queueMode) : value
+      return result === snapshot.queueMode ? snapshot : { ...snapshot, queueMode: result }
+    })
+    return result
+  }
   const [input, setInput] = createSignal('')
   const [models, setModels] = createSignal<ModelInfo[]>([])
-  const [error, setError] = createSignal<string | null>(null)
-  const [queueMode, setQueueMode] = createSignal<QueueMode>('prompt')
   const [parentStack, setParentStack] = createSignal<Array<ParentStackEntry>>([])
   const [taskHistory, setTaskHistory] = createSignal<TaskHistoryEntry[]>([])
   const isSubSession = createMemo<boolean>(() => {
     const file = ready()?.sessionFile
     return typeof file === 'string' && file.includes('/.pi/artifacts/sessions/')
   })
-  // Tracks whether the user just sent a fresh prompt (not a steer/followup).
-  // Used to limit auto-steer activation to explicit user-initiated prompts only,
-  // so intermediate agent_start events (e.g. after steer delivery) don't override
-  // a mode the user intentionally set mid-stream.
-  let _justSentPrompt = false
-  const [currentModel, setCurrentModel] = createSignal<ModelInfo | null>(null)
-  const [thinkingLevel, setThinkingLevelState] = createSignal<string>('medium')
+  // Each snapshot tracks whether its last delivery was a fresh prompt. The
+  // reducer uses that marker to activate steer only for that thread's next
+  // agent_start, not for intermediate starts or another thread's run.
   const sessionIndex = useSessionIndex(() => ready()?.cwd ?? null)
   const [gitBranch, setGitBranch] = createSignal<string | null>(null)
   const [workspaceSummary, setWorkspaceSummary] = createSignal<WorkspaceSummaryInfo | null>(null)
@@ -92,16 +146,9 @@ export function useOpenPiSession() {
     untracked: number
     changed: number
   } | null>(null)
-  const [steeringQueue, setSteeringQueue] = createSignal<string[]>([])
-  const [followUpQueue, setFollowUpQueue] = createSignal<string[]>([])
-  const [sessionName, setSessionNameState] = createSignal<string | null>(null)
-  const [contextPercent, setContextPercent] = createSignal<number | null>(null)
-  const [sessionStats, setSessionStats] = createSignal<SessionStats | null>(null)
   // ── Extension trackers (ask / subagents) ──────────────────────────
   const trackers = useExtensionTrackers()
   const subagentFiles = useSubagentFileTracker()
-  const agentRunMetrics = useAgentRunMetrics()
-  const sessionHistory = useSessionHistory({ setMessages, setError })
   const remoteSync = useRemoteSessionSync({
     isStreaming,
     isReady: () => ready() !== null,
@@ -111,74 +158,109 @@ export function useOpenPiSession() {
   // ── Refs — plain variables assigned via SolidJS ref= callback ────────────
   let _bottomEl: HTMLDivElement | undefined
   let textareaEl: HTMLTextAreaElement | undefined
-  let currentModelName: string | null = null
-  let currentTurnStartMs: number | null = null
   // ── Derived ───────────────────────────────────────────────────────────────
   // (contextPercent is already a signal — no memo wrapper needed)
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const refreshContextUsage = async () => {
+    const threadId = activeThreadId()
+    if (!threadId) return
     try {
       const stats = await window.openpi.getSessionStats()
-      setContextPercent(stats.contextUsagePercent)
-      setSessionStats(stats)
+      updateThread(threadId, (snapshot) => ({
+        ...snapshot,
+        contextPercent: stats.contextUsagePercent,
+        sessionStats: stats,
+      }))
     } catch {
       /* non-fatal */
     }
   }
 
-  const handleEvent = (event: SessionEvent) => {
-    if (event.type === 'agent_start') {
-      setIsStreaming(true)
-      remoteSync.markLocalActivity()
-      agentRunMetrics.start()
-      // Auto-activate steer mode ONLY when the user explicitly sent a fresh
-      // prompt — not on every agent_start (e.g. intermediate restarts after
-      // a steer delivery). This prevents overriding a mode the user set
-      // intentionally while the agent was already running.
-      if (_justSentPrompt) {
-        setQueueMode('steer')
-        _justSentPrompt = false
-      }
+  const loadInitialMessages = async (threadId: string, sessionFile: string) => {
+    try {
+      const page = await window.openpi.getSessionMessages(sessionFile, {
+        limit: HISTORY_PAGE_LIMIT,
+      })
+      updateThread(threadId, (snapshot) => {
+        if (snapshot.ready.sessionFile !== sessionFile) return snapshot
+        const seen = new Set(page.messages.map((message) => message.id))
+        const liveMessages = snapshot.messages.filter((message) => !seen.has(message.id))
+        return {
+          ...snapshot,
+          messages: [...page.messages, ...liveMessages],
+          hasMoreHistoryBefore: page.hasMoreBefore,
+          historyBeforeEntryId: page.nextBeforeEntryId,
+        }
+      })
+    } catch (err) {
+      updateThread(threadId, (snapshot) => ({
+        ...snapshot,
+        error: err instanceof Error ? err.message : String(err),
+      }))
     }
-    if (event.type === 'turn_start') {
-      const e = event as { timestamp?: number }
-      currentTurnStartMs = e.timestamp ?? Date.now()
+  }
+
+  const loadOlderSessionMessages = async () => {
+    const threadId = activeThreadId()
+    const snapshot = selectedSnapshot()
+    const sessionFile = snapshot?.ready.sessionFile
+    const beforeEntryId = snapshot?.historyBeforeEntryId
+    if (!threadId || !sessionFile || !beforeEntryId || snapshot.isLoadingOlderHistory) {
+      return
+    }
+
+    updateThread(threadId, (current) => ({ ...current, isLoadingOlderHistory: true }))
+    try {
+      const page = await window.openpi.getSessionMessages(sessionFile, {
+        limit: HISTORY_PAGE_LIMIT,
+        beforeEntryId,
+      })
+      updateThread(threadId, (current) => {
+        if (current.ready.sessionFile !== sessionFile) return current
+        const seen = new Set(current.messages.map((message) => message.id))
+        return {
+          ...current,
+          messages: [
+            ...page.messages.filter((message) => !seen.has(message.id)),
+            ...current.messages,
+          ],
+          hasMoreHistoryBefore: page.hasMoreBefore,
+          historyBeforeEntryId: page.nextBeforeEntryId,
+          isLoadingOlderHistory: false,
+        }
+      })
+    } catch (err) {
+      updateThread(threadId, (current) => ({
+        ...current,
+        error: err instanceof Error ? err.message : String(err),
+        isLoadingOlderHistory: false,
+      }))
+    }
+  }
+
+  const handleEvent = (threadId: string, event: SessionEvent) => {
+    const isSelected = threadId === activeThreadId()
+    updateThread(threadId, (snapshot) => applyThreadSessionEvent(snapshot, event))
+
+    if (event.type === 'agent_start' && isSelected) {
+      remoteSync.markLocalActivity()
     }
     if (event.type === 'agent_end') {
-      setIsStreaming(false)
-      setQueueMode('prompt')
-      currentTurnStartMs = null
-      void refreshContextUsage()
-      // Clear finished subagents on session end; keep task tray across agent turns
-      trackers.clearFinished()
-
-      // Compute wall-clock TPS using agent_end event.messages (same approach as Pi's tps.ts)
-      agentRunMetrics.finish(event as Record<string, unknown>)
+      if (isSelected) {
+        void refreshContextUsage()
+        // Clear finished subagents on session end; keep task tray across agent turns
+        trackers.clearFinished()
+      }
     }
 
     // ── Extension tracker dispatch ───────────────────────────────────────────
-    if (event.type === 'tool_execution_start' || event.type === 'tool_execution_end') {
+    if (
+      isSelected &&
+      (event.type === 'tool_execution_start' || event.type === 'tool_execution_end')
+    ) {
       trackers.dispatchEvent(event as Record<string, unknown>, event.type)
     }
-
-    if (event.type === 'queue_update') {
-      const e = event as { steering?: readonly string[]; followUp?: readonly string[] }
-      batch(() => {
-        setSteeringQueue([...(e.steering ?? [])])
-        setFollowUpQueue([...(e.followUp ?? [])])
-      })
-      return
-    }
-    if (event.type === 'session_info_changed') {
-      const e = event as { name?: string }
-      setSessionNameState(e.name ?? null)
-      return
-    }
-
-    setMessages((previous) =>
-      applySessionEvent(previous, event, currentModelName, currentTurnStartMs)
-    )
   }
 
   // ── Scroll-to-bottom on message changes ──────────────────────────────────
@@ -194,7 +276,10 @@ export function useOpenPiSession() {
           .getModels()
           .then((availableModels) => {
             setModels(availableModels)
-            if (!currentModel() && availableModels.length) setCurrentModel(availableModels[0])
+            const firstModel = availableModels[0]
+            if (!currentModel() && firstModel) {
+              updateSelected((snapshot) => ({ ...snapshot, currentModel: firstModel }))
+            }
           })
           .catch(() => {})
       }
@@ -271,30 +356,21 @@ export function useOpenPiSession() {
   onMount(() => {
     const unsubs: Array<() => void> = []
 
-    unsubs.push(window.openpi.onSessionEvent(handleEvent))
+    unsubs.push(window.openpi.onSessionEvent(({ threadId, event }) => handleEvent(threadId, event)))
     unsubs.push(window.openpi.onRemoteSessionStatus(remoteSync.handleRemoteSessionStatus))
 
     unsubs.push(window.openpi.onRemoteSessionUpdate(remoteSync.handleRemoteSessionUpdate))
 
     unsubs.push(
-      window.openpi.onSessionReady((payload) => {
+      window.openpi.onSessionReady(({ threadId, ready: payload }) => {
+        const readyResult = applyThreadSessionReady(snapshots.get(threadId), threadId, payload)
         batch(() => {
-          setReady(payload)
+          commitSnapshot(threadId, readyResult.snapshot)
+          setActiveThreadId(threadId)
+          setTransportError(null)
           sessionIndex.setSelectedWorkspacePath(payload.cwd)
-          setMessages([])
-          setError(null)
-          setSteeringQueue([])
-          setFollowUpQueue([])
-          setSessionNameState(payload.sessionName ?? null)
           // Clear extension trackers on new session
           trackers.clearAll()
-          if (payload.model) {
-            setCurrentModel(payload.model)
-            currentModelName = payload.model.name
-          }
-          if (payload.thinkingLevel) setThinkingLevelState(payload.thinkingLevel)
-          sessionHistory.reset(payload.sessionFile ?? null)
-          setContextPercent(null)
           setWorkspaceSummary(null)
         })
 
@@ -302,31 +378,39 @@ export function useOpenPiSession() {
         window.openpi
           .getWorkspaceSummary(summaryCwd)
           .then((info) => {
-            if (ready()?.cwd !== summaryCwd) return
+            if (activeThreadId() !== threadId || ready()?.cwd !== summaryCwd) return
             setWorkspaceSummary(info)
             setGitBranch(info.branch)
           })
           .catch(() => {
-            if (ready()?.cwd !== summaryCwd) return
+            if (activeThreadId() !== threadId || ready()?.cwd !== summaryCwd) return
             setWorkspaceSummary(null)
             setGitBranch(null)
           })
 
-        if (payload.sessionFile) {
-          sessionHistory.loadInitialMessages(payload.sessionFile)
+        if (readyResult.created && payload.sessionFile) {
+          void loadInitialMessages(threadId, payload.sessionFile)
         }
 
         void sessionIndex.loadSessionIndex(payload.cwd)
-        void refreshContextUsage()
+        if (readyResult.created || readyResult.snapshot.contextPercent === null) {
+          void refreshContextUsage()
+        }
       })
     )
 
     unsubs.push(
-      window.openpi.onSessionError((err) => {
-        batch(() => {
-          setError(err.message)
-          setIsStreaming(false)
-        })
+      window.openpi.onSessionError(({ threadId, error: err }) => {
+        const targetThreadId = threadId
+        if (!targetThreadId || !snapshots.has(targetThreadId)) {
+          setTransportError(err.message)
+          return
+        }
+        updateThread(targetThreadId, (snapshot) => ({
+          ...snapshot,
+          error: err.message,
+          isStreaming: false,
+        }))
       })
     )
 
@@ -421,7 +505,8 @@ export function useOpenPiSession() {
   const send = async (contextPrefix?: string) => {
     const promptPayload = buildSessionPromptPayload(input(), contextPrefix)
     const r = ready()
-    if (!promptPayload.text || !r) return
+    const threadId = activeThreadId()
+    if (!promptPayload.text || !r || !threadId) return
 
     setInput('')
     if (textareaEl) textareaEl.style.height = 'auto'
@@ -432,17 +517,28 @@ export function useOpenPiSession() {
       else if (queueMode() === 'followup')
         await window.openpi.followUp(promptPayload.text, promptPayload.contextPrefix)
       else {
-        _justSentPrompt = true
+        updateThread(threadId, (snapshot) => ({ ...snapshot, awaitingPromptStart: true }))
         await window.openpi.prompt(promptPayload.text, promptPayload.contextPrefix)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      const message = err instanceof Error ? err.message : String(err)
+      updateThread(threadId, (snapshot) => ({
+        ...snapshot,
+        error: message,
+        awaitingPromptStart: false,
+      }))
     }
   }
 
-  const updateShellMessage = (id: string, result: BashExecutionResult | null, error?: string) => {
-    setMessages((previous) =>
-      previous.map((message) => {
+  const updateShellMessage = (
+    threadId: string,
+    id: string,
+    result: BashExecutionResult | null,
+    error?: string
+  ) => {
+    updateThread(threadId, (snapshot) => ({
+      ...snapshot,
+      messages: snapshot.messages.map((message) => {
         if (message.id !== id || message.role === 'system' || message.role === 'extension')
           return message
         const card = message.toolCards[0]
@@ -458,54 +554,61 @@ export function useOpenPiSession() {
             },
           ],
         }
-      })
-    )
+      }),
+    }))
   }
 
   const sendShell = async () => {
     const command = input().trim()
     const r = ready()
-    if (!command || !r || isShellRunning()) return
+    const threadId = activeThreadId()
+    if (!command || !r || !threadId || isShellRunning()) return
 
     const id = `bash-${Date.now()}`
     setInput('')
     if (textareaEl) textareaEl.style.height = 'auto'
-    setIsShellRunning(true)
-    setMessages((previous) => [
-      ...previous,
-      {
-        id,
-        role: 'assistant',
-        text: '',
-        toolCards: [
-          {
-            toolCallId: id,
-            toolName: 'bash',
-            args: { command },
-            output: '',
-            isError: false,
-            streaming: true,
-          },
-        ],
-      },
-    ])
+    updateThread(threadId, (snapshot) => ({
+      ...snapshot,
+      isShellRunning: true,
+      messages: [
+        ...snapshot.messages,
+        {
+          id,
+          role: 'assistant',
+          text: '',
+          toolCards: [
+            {
+              toolCallId: id,
+              toolName: 'bash',
+              args: { command },
+              output: '',
+              isError: false,
+              streaming: true,
+            },
+          ],
+        },
+      ],
+    }))
 
     try {
       const result = await window.openpi.bash(command)
-      updateShellMessage(id, result)
-      void refreshContextUsage()
+      updateShellMessage(threadId, id, result)
+      if (activeThreadId() === threadId) void refreshContextUsage()
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      setError(message)
-      updateShellMessage(id, null, message)
+      updateThread(threadId, (snapshot) => ({ ...snapshot, error: message }))
+      updateShellMessage(threadId, id, null, message)
     } finally {
-      setIsShellRunning(false)
+      updateThread(threadId, (snapshot) => ({ ...snapshot, isShellRunning: false }))
     }
   }
 
   const selectModel = async (model: ModelInfo) => {
-    setCurrentModel(model)
-    currentModelName = model.name
+    updateSelected((snapshot) => ({
+      ...snapshot,
+      ready: { ...snapshot.ready, model },
+      currentModel: model,
+    }))
     await window.openpi.setModel({ provider: model.provider, modelId: model.id })
   }
 
@@ -519,16 +622,27 @@ export function useOpenPiSession() {
   }
 
   const selectThinkingLevel = async (level: string) => {
-    setThinkingLevelState(level)
+    updateSelected((snapshot) => ({
+      ...snapshot,
+      ready: { ...snapshot.ready, thinkingLevel: level },
+      thinkingLevel: level,
+    }))
     await window.openpi.setThinking(level)
   }
 
   const setSessionName = async (name: string) => {
+    const threadId = activeThreadId()
+    if (!threadId) return
     try {
       await window.openpi.setSessionName(name)
-      setSessionNameState(name)
+      updateThread(threadId, (snapshot) => ({
+        ...snapshot,
+        ready: { ...snapshot.ready, sessionName: name },
+        sessionName: name,
+      }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      const message = err instanceof Error ? err.message : String(err)
+      updateThread(threadId, (snapshot) => ({ ...snapshot, error: message }))
     }
   }
 
@@ -588,7 +702,7 @@ export function useOpenPiSession() {
       return isStreaming()
     },
     get agentRunMetrics() {
-      return agentRunMetrics.metrics()
+      return selectedSnapshot()?.runMetrics ?? null
     },
     get isShellRunning() {
       return isShellRunning()
@@ -613,6 +727,17 @@ export function useOpenPiSession() {
     },
     get sessions() {
       return sessionIndex.sessions()
+    },
+    get allSessions() {
+      return sessionIndex.allSessions()
+    },
+    get runningSessionPaths() {
+      snapshotRevision()
+      return new Set(
+        [...snapshots.values()].flatMap((snapshot) =>
+          snapshot.isStreaming && snapshot.ready.sessionFile ? [snapshot.ready.sessionFile] : []
+        )
+      )
     },
     get selectedWorkspacePath() {
       return sessionIndex.selectedWorkspacePath()
@@ -673,10 +798,10 @@ export function useOpenPiSession() {
       return thinkingLevel()
     },
     get hasMoreHistoryBefore() {
-      return sessionHistory.hasMoreHistoryBefore()
+      return selectedSnapshot()?.hasMoreHistoryBefore ?? false
     },
     get isLoadingOlderHistory() {
-      return sessionHistory.isLoadingOlderHistory()
+      return selectedSnapshot()?.isLoadingOlderHistory ?? false
     },
 
     // ── Extension tracker state ─────────────────────────────────────
@@ -762,7 +887,7 @@ export function useOpenPiSession() {
     createNewSession,
     selectWorkspace: sessionIndex.selectWorkspace,
     loadWorkspacePreview: sessionIndex.loadWorkspacePreview,
-    loadOlderSessionMessages: sessionHistory.loadOlderSessionMessages,
+    loadOlderSessionMessages,
     send,
     sendShell,
     selectModel,

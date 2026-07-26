@@ -175,7 +175,7 @@ export function DiffViewer(props: DiffViewerProps) {
     )
 
   return (
-    <div class="diff-overlay" aria-label="Diff viewer">
+    <div class="diff-overlay">
       <div class="diff-header">
         <div class="diff-nav">
           <button
@@ -217,8 +217,8 @@ export function DiffViewer(props: DiffViewerProps) {
           </Show>
         </button>
 
-        <div class="diff-actions" aria-label="Review display controls">
-          <div class="diff-style-toggle" role="group" aria-label="Diff layout">
+        <fieldset class="diff-actions" aria-label="Review display controls">
+          <fieldset class="diff-style-toggle" aria-label="Diff layout">
             <button
               type="button"
               class={`diff-toggle-btn${diffStyle() === 'split' ? ' is-active' : ''}`}
@@ -235,11 +235,11 @@ export function DiffViewer(props: DiffViewerProps) {
             >
               Unified
             </button>
-          </div>
+          </fieldset>
           <button type="button" class="diff-close-btn" onClick={props.onClose} title="Close (Esc)">
             ✕
           </button>
-        </div>
+        </fieldset>
       </div>
 
       <div class="diff-body">

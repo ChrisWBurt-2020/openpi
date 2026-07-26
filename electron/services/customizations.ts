@@ -12,6 +12,7 @@ import type {
   PackageOperationResult,
 } from '../../src/lib/ipc'
 import { packageOperationResultSchema } from '../../src/lib/ipc'
+import { bundledThemePaths, isFirstPartyThemeId } from './bundledThemes'
 import {
   dedupeItems,
   discoverExtensionItems,
@@ -147,16 +148,28 @@ export async function discoverCustomizations(options: {
   workspaceTrusted: boolean
 }): Promise<CustomizationsInventory> {
   const { cwd, agentDir, workspaceTrusted } = options
-  if (!cwd) {
-    return { cwd: null, workspaceTrusted: false, items: [], diagnostics: [] }
-  }
 
-  const settingsManager = SettingsManager.create(cwd, agentDir)
+  /*
+   * With no workspace open this used to return an empty inventory, so Settings
+   * reported "0 available" for everything — including the user's GLOBAL skills
+   * and prompts in ~/.pi/agent, which exist regardless of which folder is
+   * open. Reporting zero of something the user installed is worse than
+   * reporting it without project scope.
+   *
+   * Fall back to agentDir as the resolution root, which is what the sidecar
+   * already does for settings when it has no session
+   * (`SettingsManager.create(agentDir, agentDir)`). Project-scoped resources
+   * genuinely can't be listed without a project; global ones can.
+   */
+  const resolutionCwd = cwd ?? agentDir
+
+  const settingsManager = SettingsManager.create(resolutionCwd, agentDir)
   const loader = new DefaultResourceLoader({
-    cwd,
+    cwd: resolutionCwd,
     agentDir,
     settingsManager,
     noExtensions: true,
+    additionalThemePaths: bundledThemePaths(),
   })
   const items: CustomizationItem[] = []
   const diagnostics: CustomizationDiagnostic[] = []
@@ -174,7 +187,13 @@ export async function discoverCustomizations(options: {
   })
 
   items.push(
-    ...discoverExtensionItems({ cwd, agentDir, settingsManager, diagnostics, workspaceTrusted })
+    ...discoverExtensionItems({
+      cwd: resolutionCwd,
+      agentDir,
+      settingsManager,
+      diagnostics,
+      workspaceTrusted,
+    })
   )
 
   const skills = loader.getSkills()
@@ -237,12 +256,17 @@ export async function discoverCustomizations(options: {
       enabled: true,
       packageSource: source.origin === 'package' ? source.source : undefined,
       riskLevel: riskLevelForType('themes'),
+      builtIn: isFirstPartyThemeId(theme.name ?? ''),
       lastModifiedAt: mtimeIso(themePath),
     })
   }
 
   try {
-    const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager })
+    const packageManager = new DefaultPackageManager({
+      cwd: resolutionCwd,
+      agentDir,
+      settingsManager,
+    })
     for (const configured of packageManager.listConfiguredPackages()) {
       items.push({
         id: `packages:${configured.scope}:${configured.source}`,

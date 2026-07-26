@@ -9,6 +9,7 @@ import { registerMainIpcHandlers } from './ipc/register'
 import { createSidecarMessageHandler } from './pi/messages'
 import type { SidecarCommand, SidecarMessage } from './pi/sidecar'
 import { checkPiUpdate } from './pi/updater'
+import { RemoteConnectionManager } from './remote/connectionManager'
 import { startArtifactWatcher } from './services/artifactWatcher'
 import { handleLocalFileProtocol, registerLocalFileScheme } from './services/localFileProtocol'
 import {
@@ -41,17 +42,21 @@ import {
   ensurePiSidecarStarted,
   getPiSidecarHost,
   getSessionState,
+  isForegroundThread,
   normalizeSessionReady,
   refreshSessionIndex,
   resolveActiveCwd,
+  resolveThreadCwd,
   setOnMaybeCheckPiUpdate,
   setOnOutputLine,
   setOnRestartGitMonitoring,
   setOnSidecarMessage,
   setOnStopGitMonitoring,
   setSessionHostMainWindow,
+  setSessionHostRemoteConnections,
   setSessionHostSessionIndex,
   showDeferredWorkspace,
+  startSession,
 } from './session/sessionHost'
 import { SessionIndexStore } from './session/sessionIndex'
 
@@ -94,6 +99,7 @@ async function confirmHighRiskMutation(options: {
 
 let mainWindow: BrowserWindow | null = null
 let sessionIndex: SessionIndexStore | null = null
+let remoteConnections: RemoteConnectionManager | null = null
 
 // ── Output ring buffer ─────────────────────────────────────────────────
 // Lines emitted before the Output pane opens are held here so they are
@@ -127,6 +133,7 @@ process.on('unhandledRejection', (reason: unknown) => {
 })
 
 async function restartGitMonitoring(cwd: string): Promise<void> {
+  if (cwd.startsWith('ssh://')) return
   const git = await getGitHost()
   git.startGitPoll(cwd, (status: GitStatusResult) => {
     mainWindow?.webContents.send(IPC.GIT_STATUS_CHANGED, status)
@@ -158,6 +165,8 @@ const handleSidecarMessage = createSidecarMessageHandler({
   applySessionReady,
   refreshSessionIndex,
   resolveActiveCwd,
+  resolveThreadCwd,
+  isForegroundThread,
   showSystemNotification,
   playSoundEffect,
   getGitHost,
@@ -173,6 +182,7 @@ function registerHandlers(): void {
     getMainWindow: () => mainWindow,
     outputBuffer,
     getSessionIndex: () => sessionIndex,
+    getRemoteConnections: () => remoteConnections,
     getCustomizationsHost,
     getFffHost,
     ensureFffInitialized,
@@ -201,6 +211,7 @@ function createWindow(): void {
     getSessionIndex: () => sessionIndex,
     ensurePiSidecarStarted,
     showDeferredWorkspace,
+    resumeSession: (cwd: string, sessionFile: string) => startSession(cwd, { sessionFile }),
     refreshSessionIndex,
     onClosed: () => {
       mainWindow = null
@@ -221,8 +232,10 @@ app.whenReady().then(() => {
   handleLocalFileProtocol(() => getSessionState()?.cwd ?? null)
 
   sessionIndex = new SessionIndexStore(path.join(app.getPath('userData'), 'openpi.sqlite'))
+  remoteConnections = new RemoteConnectionManager(sessionIndex)
   setSessionIndex(sessionIndex)
   setSessionHostSessionIndex(sessionIndex)
+  setSessionHostRemoteConnections(remoteConnections)
 
   // Wire sessionHost callbacks
   setOnSidecarMessage(handleSidecarMessage)
@@ -288,6 +301,7 @@ app.on('quit', () => {
     })
   if (hasFffHost()) void getFffHost().then((host) => host.destroyFff())
   if (getPiSidecarHost()) void getPiSidecarHost()!.stop()
+  if (remoteConnections) void remoteConnections.disconnectAll()
   clearSessionState()
   if (hasPtyHost()) void getPtyHost().then((p) => p.closeAll())
   sessionIndex?.close()

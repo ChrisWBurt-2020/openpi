@@ -4,6 +4,14 @@
  * Renderer imports types only — never imports electron or node builtins.
  */
 import { z } from 'zod'
+import {
+  insightDismissedRequestSchema,
+  listInsightStateRequestSchema,
+  listSavedInsightsRequestSchema,
+  removeSavedInsightRequestSchema,
+  savedInsightSchema,
+  saveInsightRequestSchema,
+} from '../insights'
 
 // Channel names moved to ./channels
 export { IPC } from './channels'
@@ -200,11 +208,145 @@ export type UsageSummary = z.infer<typeof usageSummarySchema>
 
 // ─── Workspace + session index ─────────────────────────────────────────────
 
+export const connectionStatusSchema = z.enum([
+  'disconnected',
+  'connecting',
+  'connected',
+  'reconnecting',
+  'error',
+])
+export type ConnectionStatus = z.infer<typeof connectionStatusSchema>
+
+export const connectionStateSchema = z.object({
+  connectionId: z.string().uuid(),
+  status: connectionStatusSchema,
+  latencyMs: z.number().int().nonnegative().nullable(),
+  error: z.string().max(500).nullable(),
+})
+export type ConnectionState = z.infer<typeof connectionStateSchema>
+
+export const connectionIdSchema = z.string().uuid()
+
+export const workspaceLocationSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('local'), path: z.string().min(1) }),
+  z.object({ kind: z.literal('ssh'), connectionId: z.string().uuid(), path: z.string().min(1) }),
+])
+export type WorkspaceLocation = z.infer<typeof workspaceLocationSchema>
+
+/** The location says where code lives; this says where Pi itself runs. */
+export const projectExecutionModeSchema = z.enum(['local', 'ssh-workspace', 'persistent-runner'])
+export type ProjectExecutionMode = z.infer<typeof projectExecutionModeSchema>
+
+export const connectionProfileSchema = z.object({
+  id: z.string().uuid(),
+  label: z.string().min(1).max(80),
+  host: z.string().min(1).max(255),
+  username: z.string().min(1).max(128),
+  port: z.number().int().min(1).max(65535),
+  identityFile: z.string().min(1).max(2048).nullable(),
+  hostKeyFingerprint: z.string().min(1).max(200).nullable(),
+  status: connectionStatusSchema,
+  latencyMs: z.number().int().nonnegative().nullable(),
+  lastConnectedAt: z.string().nullable(),
+  lastError: z.string().max(500).nullable(),
+})
+export type ConnectionProfile = z.infer<typeof connectionProfileSchema>
+
+export const connectionDraftSchema = connectionProfileSchema
+  .pick({
+    label: true,
+    host: true,
+    username: true,
+    port: true,
+    identityFile: true,
+    hostKeyFingerprint: true,
+  })
+  .partial({ identityFile: true, hostKeyFingerprint: true })
+export type ConnectionDraft = z.infer<typeof connectionDraftSchema>
+
+export const connectionUpdateSchema = connectionDraftSchema.extend({ id: connectionIdSchema })
+
+export const connectionTestResultSchema = z.object({
+  ok: z.boolean(),
+  status: connectionStatusSchema,
+  fingerprint: z.string().nullable(),
+  homePath: z.string().nullable(),
+  message: z.string().max(500).nullable(),
+  checks: z.object({
+    linux: z.boolean(),
+    sftp: z.boolean(),
+    nodeVersion: z.string().nullable(),
+    piVersion: z.string().nullable(),
+  }),
+})
+export type ConnectionTestResult = z.infer<typeof connectionTestResultSchema>
+
+export const remoteRuntimeCheckSchema = z.object({
+  linux: z.boolean(),
+  nodeReady: z.boolean(),
+  piReady: z.boolean(),
+  nodeVersion: z.string().nullable(),
+  piVersion: z.string().nullable(),
+  helperReady: z.boolean(),
+  writableHome: z.boolean(),
+  ready: z.boolean(),
+  message: z.string().max(500).nullable(),
+})
+export type RemoteRuntimeCheck = z.infer<typeof remoteRuntimeCheckSchema>
+
+export const installRemoteRuntimeSchema = z.object({
+  connectionId: connectionIdSchema,
+  installPi: z.literal(true),
+  installHelper: z.literal(true),
+})
+export type InstallRemoteRuntime = z.infer<typeof installRemoteRuntimeSchema>
+
+export const remoteDirectorySchema = z.object({
+  name: z.string(),
+  path: z.string(),
+  isDirectory: z.boolean(),
+  isGitRepository: z.boolean(),
+})
+export type RemoteDirectory = z.infer<typeof remoteDirectorySchema>
+
+export const remoteDirectoryRequestSchema = z.object({
+  connectionId: z.string().uuid(),
+  path: z.string().min(1).max(4096).optional(),
+})
+
+export const remoteProjectRequestSchema = z.object({
+  connectionId: z.string().uuid(),
+  path: z.string().min(1).max(4096),
+  executionMode: projectExecutionModeSchema
+    .extract(['ssh-workspace', 'persistent-runner'])
+    .default('ssh-workspace'),
+})
+
+export const setRemoteProjectModeSchema = z.object({
+  workspacePath: z.string().startsWith('ssh://').max(4096),
+  executionMode: projectExecutionModeSchema.extract(['ssh-workspace', 'persistent-runner']),
+})
+
+export const removeRemoteProjectSchema = z.object({
+  workspacePath: z.string().startsWith('ssh://').max(4096),
+})
+
+export const connectionProviderKeySchema = z.object({
+  connectionId: z.string().uuid(),
+  providerId: z.string().min(1).max(160),
+  apiKey: z.string().min(1).max(10_000),
+})
+
 export const workspaceInfoSchema = z.object({
+  id: z.string().uuid().optional(),
   path: z.string(),
   displayName: z.string(),
   lastOpenedAt: z.string().nullable(),
   sessionCount: z.number(),
+  location: workspaceLocationSchema.optional(),
+  connectionLabel: z.string().nullable().optional(),
+  connectionStatus: connectionStatusSchema.optional(),
+  executionMode: projectExecutionModeSchema.optional(),
 })
 export type WorkspaceInfo = z.infer<typeof workspaceInfoSchema>
 
@@ -327,6 +469,8 @@ export const customizationItemSchema = z.object({
   lastModifiedAt: z.string().nullable().optional(),
   /** Risk classification: extensions/packages that run arbitrary code are 'high' */
   riskLevel: resourceRiskLevelSchema.optional(),
+  /** Shipped by OpenPi and safe to use in every workspace. */
+  builtIn: z.boolean().optional(),
 })
 export type CustomizationItem = z.infer<typeof customizationItemSchema>
 
@@ -578,6 +722,22 @@ export const sessionReadySchema = z.object({
 })
 export type SessionReady = z.infer<typeof sessionReadySchema>
 
+/**
+ * Renderer-facing identity for a live Pi worker. This is deliberately the
+ * sidecar-pool identity rather than `SessionReady.sessionId`: a new session
+ * has no Pi session ID until it is ready, while its worker still needs a
+ * stable destination for streamed events.
+ */
+export const threadIdSchema = z.string().min(1)
+export type ThreadId = z.infer<typeof threadIdSchema>
+
+/** A session-ready notification scoped to its live worker. */
+export const threadSessionReadySchema = z.object({
+  threadId: threadIdSchema,
+  ready: sessionReadySchema,
+})
+export type ThreadSessionReady = z.infer<typeof threadSessionReadySchema>
+
 // ─── SESSION_EVENT payload ───────────────────────────────────────────────────
 // We forward Pi's AgentSessionEvent over IPC as a plain JSON object.
 // The renderer receives it as-is and discriminates on `type`.
@@ -589,6 +749,13 @@ export const sessionEventSchema = z
   .passthrough()
 export type SessionEvent = z.infer<typeof sessionEventSchema>
 
+/** An agent event scoped to the worker that emitted it. */
+export const threadSessionEventSchema = z.object({
+  threadId: threadIdSchema,
+  event: sessionEventSchema,
+})
+export type ThreadSessionEvent = z.infer<typeof threadSessionEventSchema>
+
 // ─── SESSION_ERROR payload ───────────────────────────────────────────────────
 
 export const sessionErrorSchema = z.object({
@@ -596,6 +763,17 @@ export const sessionErrorSchema = z.object({
   code: z.string().optional(),
 })
 export type SessionError = z.infer<typeof sessionErrorSchema>
+
+/**
+ * A session error scoped to a worker when one is known. Errors raised before a
+ * worker is acquired remain explicitly unscoped instead of being attributed to
+ * the foreground session.
+ */
+export const threadSessionErrorSchema = z.object({
+  threadId: threadIdSchema.nullable(),
+  error: sessionErrorSchema,
+})
+export type ThreadSessionError = z.infer<typeof threadSessionErrorSchema>
 
 // ─── Session name ────────────────────────────────────────────────────────────
 
@@ -757,6 +935,16 @@ export const setPrefSchema = z.object({
   value: z.string().max(10_000),
 })
 export type SetPref = z.infer<typeof setPrefSchema>
+
+export {
+  insightDismissedRequestSchema,
+  listInsightStateRequestSchema,
+  listSavedInsightsRequestSchema,
+  removeSavedInsightRequestSchema,
+  savedInsightSchema,
+  saveInsightRequestSchema,
+}
+export type SavedInsightPayload = z.infer<typeof savedInsightSchema>
 
 export const playSoundEffectSchema = z.object({
   sound: z.string().min(1).max(50),

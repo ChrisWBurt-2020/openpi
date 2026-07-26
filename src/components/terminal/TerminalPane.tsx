@@ -9,6 +9,7 @@ import {
   buildTerminalFontStack,
   loadAppearancePreferences,
 } from '../../lib/appearancePreferences'
+import { THEME_CHANGED_EVENT } from '../../lib/themeApply'
 import { parseTerminalIntegrationData } from './shellIntegration'
 import 'nerdfonts-web/nf.css'
 
@@ -24,6 +25,34 @@ interface Props {
 
 const NERD_SYMBOL_FONT = 'NerdFontsSymbols Nerd Font'
 const TERMINAL_FONT_SIZE = 15
+
+function terminalTheme(): Record<string, string> {
+  const styles = getComputedStyle(document.documentElement)
+  const token = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback
+  return {
+    background: token('--surface-inset', '#070706'),
+    foreground: token('--ink', '#e9e1d6'),
+    cursor: token('--accent', '#f5efe6'),
+    cursorAccent: token('--surface-inset', '#070706'),
+    selectionBackground: token('--surface-raised', '#263450'),
+    black: token('--canvas-warm', '#161514'),
+    brightBlack: token('--mute', '#5c5751'),
+    red: token('--danger', '#e06c75'),
+    brightRed: token('--danger', '#e06c75'),
+    green: token('--success', '#98c379'),
+    brightGreen: token('--success', '#98c379'),
+    yellow: token('--warning', '#e5c07b'),
+    brightYellow: token('--warning', '#e5c07b'),
+    blue: token('--accent', '#61afef'),
+    brightBlue: token('--accent', '#61afef'),
+    magenta: token('--accent', '#c678dd'),
+    brightMagenta: token('--accent', '#c678dd'),
+    cyan: token('--ink-soft', '#56b6c2'),
+    brightCyan: token('--ink-soft', '#56b6c2'),
+    white: token('--graphite', '#d8d1c8'),
+    brightWhite: token('--ink', '#fff8ef'),
+  }
+}
 
 async function loadTerminalFonts(fontSize: number, preferredFont = ''): Promise<void> {
   if (!document.fonts?.load) return
@@ -51,29 +80,7 @@ export function TerminalPane(props: Props) {
 
     const fontSize = TERMINAL_FONT_SIZE
     const nextTerm = new Terminal({
-      theme: {
-        background: '#070706',
-        foreground: '#e9e1d6',
-        cursor: '#f5efe6',
-        cursorAccent: '#070706',
-        selectionBackground: 'rgba(245, 239, 230, 0.18)',
-        black: '#161514',
-        brightBlack: '#5c5751',
-        red: '#e06c75',
-        brightRed: '#e06c75',
-        green: '#98c379',
-        brightGreen: '#98c379',
-        yellow: '#e5c07b',
-        brightYellow: '#e5c07b',
-        blue: '#61afef',
-        brightBlue: '#61afef',
-        magenta: '#c678dd',
-        brightMagenta: '#c678dd',
-        cyan: '#56b6c2',
-        brightCyan: '#56b6c2',
-        white: '#d8d1c8',
-        brightWhite: '#fff8ef',
-      },
+      theme: terminalTheme(),
       fontFamily: buildTerminalFontStack(''),
       fontSize,
       lineHeight: 1.12,
@@ -120,7 +127,11 @@ export function TerminalPane(props: Props) {
     const onAppearanceChanged = (event: Event) => {
       applyTerminalFont((event as CustomEvent<AppearancePreferences>).detail)
     }
+    const onThemeChanged = () => {
+      nextTerm.options.theme = terminalTheme()
+    }
     window.addEventListener(APPEARANCE_PREFERENCES_CHANGED_EVENT, onAppearanceChanged)
+    window.addEventListener(THEME_CHANGED_EVENT, onThemeChanged)
 
     const startTerminal = async () => {
       const appearance = await loadAppearancePreferences().catch(() => null)
@@ -185,6 +196,7 @@ export function TerminalPane(props: Props) {
         ptyId = null
       }
       window.removeEventListener(APPEARANCE_PREFERENCES_CHANGED_EVENT, onAppearanceChanged)
+      window.removeEventListener(THEME_CHANGED_EVENT, onThemeChanged)
       webglAddon?.dispose()
       nextTerm.dispose()
       term = null
