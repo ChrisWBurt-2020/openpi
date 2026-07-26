@@ -8,12 +8,14 @@
  *   - Early return pattern → <Show when={session.ready}> control flow
  *   - className  → class in SolidJS JSX
  */
+import { PanelLeftOpen } from 'lucide-solid'
 import { createEffect, createMemo, createSignal, onMount, Show } from 'solid-js'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { ExtensionUiOverlay } from './components/ExtensionUiOverlay'
 import { RefsPickerPanel } from './components/git/RefsPickerPanel'
 import { Homescreen } from './components/Homescreen'
 import { ResizeHandle } from './components/ResizeHandle'
+import { ThreadSidebar } from './components/sidebar/ThreadSidebar'
 import { ToolShimmerPane } from './components/ToolShimmerPane'
 import { TopBar } from './components/TopBar'
 import { TerminalPanel } from './components/terminal/TerminalPanel'
@@ -47,6 +49,16 @@ export default function App() {
   const [rightPanelOpen, setRightPanelOpen] = createSignal(true)
   const [scrollToMessageId, _setScrollToMessageId] = createSignal<string | null>(null)
   const [homescreenOpen, setHomescreenOpen] = createSignal(false)
+  // Thread rail. Persisted so it survives a restart — a sidebar that forgets
+  // it was open is its own small annoyance. Defaults to shown, because being
+  // unable to find your other chats is the problem it exists to solve.
+  const [threadSidebarOpen, setThreadSidebarOpen] = createSignal(
+    localStorage.getItem('openpi.threadSidebar') !== 'closed'
+  )
+  const setThreadSidebar = (open: boolean) => {
+    setThreadSidebarOpen(open)
+    localStorage.setItem('openpi.threadSidebar', open ? 'open' : 'closed')
+  }
 
   const {
     gitPanelSide,
@@ -389,6 +401,37 @@ export default function App() {
                 </Show>
 
                 <div class="workbench-main">
+                  {/* Thread rail — Projects → Chats, left of everything else. */}
+                  <Show
+                    when={threadSidebarOpen()}
+                    fallback={
+                      <div class="thread-sidebar-reopen">
+                        <button
+                          type="button"
+                          class="thread-sidebar-icon-btn"
+                          title="Show projects and chats"
+                          aria-label="Show projects and chats"
+                          onClick={() => setThreadSidebar(true)}
+                        >
+                          <PanelLeftOpen size={14} />
+                        </button>
+                      </div>
+                    }
+                  >
+                    <ThreadSidebar
+                      sessions={session.sessions}
+                      workspaces={session.workspaces}
+                      activeSessionPath={activeSessionPath()}
+                      onSelectSession={(path: string) =>
+                        void session.openExistingSession({ path } as SessionListItem)
+                      }
+                      onNewSession={() => void session.createNewSession()}
+                      onSelectWorkspace={(path: string) => void session.selectWorkspace(path)}
+                      onOpenWorkspace={() => void session.openWorkspace()}
+                      onCollapse={() => setThreadSidebar(false)}
+                    />
+                  </Show>
+
                   <GitSidePanel
                     visible={gitPanelOpen() && gitPanelSide() === 'left'}
                     side="left"
