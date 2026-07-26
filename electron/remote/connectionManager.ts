@@ -14,6 +14,7 @@ import type { SessionIndexStore } from '../session/sessionIndex'
 import { providerEnvironment, sshConfig } from './auth'
 import { RUNNER_CONNECTOR, RUNNER_DAEMON } from './runnerAssets'
 import type { ConnectionState } from './types'
+import { workspaceCandidate } from './workspacePath'
 import type { WorkspaceRequest } from './workspaceProtocol'
 
 const CONNECTION_TIMEOUT_MS = 15_000
@@ -271,7 +272,6 @@ export class RemoteConnectionManager {
     request: WorkspaceRequest
   ): Promise<unknown> {
     const client = await this.connect(connectionId)
-    const sftp = await this.openSftp(connectionId, client)
     const startedAt = Date.now()
     recordDiagnostic({
       level: 'debug',
@@ -281,17 +281,19 @@ export class RemoteConnectionManager {
       correlationId: request.requestId,
       data: { connectionId, operation: request.operation, hasPath: Boolean(request.path) },
     })
+    let sftp: SFTPWrapper | null = null
+    const requireSftp = async (): Promise<SFTPWrapper> => {
+      if (sftp) return sftp
+      sftp = await this.openSftp(connectionId, client)
+      return sftp
+    }
     const toRemote = async (value: string, write = false): Promise<string> => {
-      const relative = path.relative(virtualCwd, value).replace(/\\/g, '/')
-      if (!relative || relative === '.') return root
-      if (relative.startsWith('../') || relative === '..' || path.posix.isAbsolute(relative)) {
-        throw new Error('Remote workspace path escapes its selected root')
-      }
-      const candidate = normalizeRemotePath(path.posix.join(root, relative))
+      const candidate = workspaceCandidate(root, virtualCwd, value)
+      const activeSftp = await requireSftp()
       const checkPath = write ? path.posix.dirname(candidate) : candidate
       const resolved = write
-        ? await this.sftpNearestExistingParent(sftp, checkPath)
-        : await this.sftpRealpath(sftp, checkPath)
+        ? await this.sftpNearestExistingParent(activeSftp, checkPath)
+        : await this.sftpRealpath(activeSftp, checkPath)
       if (resolved !== root && !resolved.startsWith(`${root}/`)) {
         throw new Error('Remote workspace path resolves outside its selected root')
       }
@@ -302,31 +304,31 @@ export class RemoteConnectionManager {
       switch (request.operation) {
         case 'read': {
           const target = await toRemote(this.requireWorkspacePath(request))
-          return (await this.sftpReadFile(sftp, target)).toString('utf8')
+          return (await this.sftpReadFile(await requireSftp(), target)).toString('utf8')
         }
         case 'access': {
           const target = await toRemote(this.requireWorkspacePath(request))
-          await this.sftpStat(sftp, target)
+          await this.sftpStat(await requireSftp(), target)
           return null
         }
         case 'stat': {
           const target = await toRemote(this.requireWorkspacePath(request))
-          const stats = await this.sftpStat(sftp, target)
+          const stats = await this.sftpStat(await requireSftp(), target)
           return { isDirectory: Boolean(stats.mode && (stats.mode & 0o170000) === 0o040000) }
         }
         case 'readdir': {
           const target = await toRemote(this.requireWorkspacePath(request))
-          const entries = await this.sftpReadDir(sftp, target)
+          const entries = await this.sftpReadDir(await requireSftp(), target)
           return entries.filter((entry) => entry !== '.' && entry !== '..')
         }
         case 'write': {
           const target = await toRemote(this.requireWorkspacePath(request), true)
           if (request.pattern === 'mkdir') {
-            await this.sftpMkdirp(sftp, target, root)
+            await this.sftpMkdirp(await requireSftp(), target, root)
             return null
           }
           if (typeof request.content !== 'string') throw new Error('Remote write requires content')
-          await this.sftpWriteFile(sftp, target, request.content)
+          await this.sftpWriteFile(await requireSftp(), target, request.content)
           return null
         }
         case 'find': {
@@ -357,7 +359,7 @@ export class RemoteConnectionManager {
           while (pending.length > 0 && files.length < 5_000) {
             const current = pending.shift()
             if (!current) break
-            const entries = await this.sftpReadDirDetailed(sftp, current.remote)
+            const entries = await this.sftpReadDirDetailed(await requireSftp(), current.remote)
             for (const entry of entries) {
               if (ignored.has(entry.filename)) continue
               const relative = current.relative
@@ -372,9 +374,15 @@ export class RemoteConnectionManager {
           return files
         }
         case 'bash': {
-          const operationCwd = await toRemote(request.cwd ?? virtualCwd)
+          const operationCwd = workspaceCandidate(root, virtualCwd, request.cwd ?? virtualCwd)
           if (!request.command) throw new Error('Remote bash requires a command')
-          return this.execWorkspaceShell(client, operationCwd, request.command, request.timeout)
+          return this.execWorkspaceShell(
+            client,
+            root,
+            operationCwd,
+            request.command,
+            request.timeout
+          )
         }
         default: {
           const exhaustive: never = request.operation
@@ -647,6 +655,7 @@ export class RemoteConnectionManager {
 
   private execWorkspaceShell(
     client: Client,
+    root: string,
     cwd: string,
     command: string,
     timeoutSeconds?: number
@@ -670,12 +679,20 @@ export class RemoteConnectionManager {
           if (timedOut) reject(new Error(`Remote command timed out after ${timeoutSeconds}s`))
           else resolve({ exitCode: code, output })
         })
+        const selectedRoot = Buffer.from(root, 'utf8').toString('base64')
         const workspace = Buffer.from(cwd, 'utf8').toString('base64')
         const encodedCommand = Buffer.from(command, 'utf8').toString('base64')
         stream.end(
-          `workspace=$(printf '%s' '${workspace}' | base64 -d) || exit 125\n` +
+          `root=$(printf '%s' '${selectedRoot}' | base64 -d) || exit 125\n` +
+            `workspace=$(printf '%s' '${workspace}' | base64 -d) || exit 125\n` +
             `command=$(printf '%s' '${encodedCommand}' | base64 -d) || exit 125\n` +
-            'cd -- "$workspace" || exit 126\n' +
+            'resolved_root=$(cd -- "$root" && pwd -P) || exit 126\n' +
+            'resolved_workspace=$(cd -- "$workspace" && pwd -P) || exit 126\n' +
+            'case "$resolved_workspace" in\n' +
+            '  "$resolved_root"|"$resolved_root"/*) ;;\n' +
+            '  *) printf "%s\\n" "Remote workspace path resolves outside its selected root" >&2; exit 126 ;;\n' +
+            'esac\n' +
+            'cd -- "$resolved_workspace" || exit 126\n' +
             'exec sh -c "$command"\n'
         )
       })
