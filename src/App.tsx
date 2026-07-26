@@ -523,6 +523,8 @@ export default function App() {
                       onSyncActionChange={setGitSyncAction}
                       onSyncMessageChange={setGitSyncMessage}
                       onOpenHistory={openGitHistory}
+                      messages={conversationMessages()}
+                      sessionPath={activeSessionPath()}
                     />
                   </Show>
                 </div>

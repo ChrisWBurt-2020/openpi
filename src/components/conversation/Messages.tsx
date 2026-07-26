@@ -78,6 +78,8 @@ export type AssistantMessageGroupProps = {
   resolveTaskId?: (card: ToolCard) => string | null
   resolveTaskStatus?: (taskId: string | null) => TaskStatus | null
   displayPreferences: DisplayPreferences
+  workspacePath?: string
+  sessionPath?: string | null
 }
 
 export const AssistantMessageGroup: Component<AssistantMessageGroupProps> = (props) => {
@@ -139,6 +141,8 @@ export const AssistantMessageGroup: Component<AssistantMessageGroupProps> = (pro
                         resolveTaskId={props.resolveTaskId}
                         resolveTaskStatus={props.resolveTaskStatus}
                         displayPreferences={props.displayPreferences}
+                        workspacePath={props.workspacePath}
+                        sessionPath={props.sessionPath}
                       />
                     )}
                   </For>
@@ -205,6 +209,8 @@ type AssistantMessageProps = {
   resolveTaskId?: (card: ToolCard) => string | null
   resolveTaskStatus?: (taskId: string | null) => TaskStatus | null
   displayPreferences: DisplayPreferences
+  workspacePath?: string
+  sessionPath?: string | null
 }
 
 export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
@@ -233,6 +239,8 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
               resolveTaskId={props.resolveTaskId}
               resolveTaskStatus={props.resolveTaskStatus}
               displayPreferences={props.displayPreferences}
+              workspacePath={props.workspacePath}
+              sessionPath={props.sessionPath}
             />
           )}
         </For>

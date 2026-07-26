@@ -53,6 +53,11 @@ export const IPC = {
   // Preferences
   GET_PREF: 'openpi:get-pref',
   SET_PREF: 'openpi:set-pref',
+  LIST_SAVED_INSIGHTS: 'openpi:list-saved-insights',
+  SAVE_INSIGHT: 'openpi:save-insight',
+  REMOVE_SAVED_INSIGHT: 'openpi:remove-saved-insight',
+  LIST_INSIGHT_STATE: 'openpi:list-insight-state',
+  SET_INSIGHT_DISMISSED: 'openpi:set-insight-dismissed',
   PLAY_SOUND_EFFECT: 'openpi:play-sound-effect',
   CHECK_PI_UPDATE: 'openpi:check-pi-update',
   INSTALL_PI_UPDATE: 'openpi:install-pi-update',

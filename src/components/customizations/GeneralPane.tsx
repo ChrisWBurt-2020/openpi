@@ -10,6 +10,7 @@ import { AppearanceSection } from './AppearanceSection'
 import { BooleanPreferenceSection } from './BooleanPreferenceSection'
 import { DiagnosticsSection } from './DiagnosticsSection'
 import type { GeneralPaneProps } from './generalPaneTypes'
+import { SignalsSection } from './SignalsSection'
 import { SoundSection } from './SoundSection'
 import { UpdateSection } from './UpdateSection'
 import { useGeneralPaneState } from './useGeneralPaneState'
@@ -75,6 +76,7 @@ export function GeneralPane(props: GeneralPaneProps) {
             onSave={(key, value) => saveNotificationValue(key as NotificationPreferenceKey, value)}
             onReset={(key) => resetNotificationValue(key as NotificationPreferenceKey)}
           />
+          <SignalsSection />
 
           <SoundSection
             soundPrefs={soundPrefs()}

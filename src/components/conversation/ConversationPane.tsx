@@ -241,6 +241,8 @@ export const ConversationPane: Component<ConversationPaneProps> = (props) => {
           resolveTaskId={props.resolveTaskId}
           resolveTaskStatus={props.resolveTaskStatus}
           displayPreferences={props.displayPreferences}
+          workspacePath={props.workspaceSummary?.cwd}
+          sessionPath={props.activeSessionPath}
         />
       )
     }

@@ -1,3 +1,5 @@
+import type { InsightMode } from '../../src/lib/insights'
+
 /**
  * piSidecarTypes.ts — Shared types for the Pi SDK sidecar process.
  *
@@ -18,6 +20,7 @@ export type SidecarCommand =
       workspaceTrusted?: boolean
     }
   | { type: 'prompt'; text: string; contextPrefix?: string }
+  | { type: 'set_insight_mode'; mode: InsightMode }
   | { type: 'steer'; text: string; contextPrefix?: string }
   | { type: 'follow_up'; text: string; contextPrefix?: string }
   | { type: 'list_prompt_templates'; requestId: string; cwd?: string; workspaceTrusted?: boolean }

@@ -24,9 +24,11 @@ import {
   SessionManager,
   SettingsManager,
 } from '@earendil-works/pi-coding-agent'
+import type { InsightMode } from '../../src/lib/insights'
 import { expandPromptTemplateText } from '../../src/lib/sessionPrompt'
 import { createOpenPiExtensionUIContext } from './extensionUiContext'
 import { fulfillExtensionUiPending } from './extensionUiPending'
+import { createInsightsExtension } from './insightsExtension'
 import { enforceIgnoreScriptsEnv } from './safePackageManager'
 import { defaultCloneDir, resolveSessionAccess, type SessionAccessDecision } from './sessionAccess'
 import {
@@ -53,6 +55,7 @@ type SessionState = {
 }
 
 let state: SessionState | null = null
+let insightMode: InsightMode = 'mentor'
 let _modelRuntime: ModelRuntime | null = null
 let _modelRegistry: ModelRegistry | null = null
 /** Advisory owner lock for the session file we currently have open (ADR-003). */
@@ -403,6 +406,7 @@ async function getResourceLoader(cwd: string, workspaceTrusted: boolean) {
     settingsManager,
     noExtensions,
     additionalExtensionPaths: noExtensions ? [agentDir] : [],
+    extensionFactories: [createInsightsExtension(() => insightMode)],
   })
   try {
     await loader.reload()
@@ -742,6 +746,11 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
           message: err instanceof Error ? err.message : String(err),
         })
       }
+      break
+    }
+
+    case 'set_insight_mode': {
+      insightMode = cmd.mode
       break
     }
 

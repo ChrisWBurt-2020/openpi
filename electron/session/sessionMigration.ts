@@ -64,6 +64,26 @@ export function runMigrations(db: Database.Database): void {
       key text primary key,
       value text not null
     );
+
+    create table if not exists insight_notebook (
+      id text primary key,
+      workspace_path text not null,
+      session_path text,
+      tool_call_id text not null,
+      payload_json text not null,
+      created_at text not null,
+      unique(workspace_path, session_path, tool_call_id)
+    );
+
+    create index if not exists idx_insight_notebook_workspace
+      on insight_notebook(workspace_path, created_at desc);
+
+    create table if not exists insight_state (
+      session_path text not null,
+      tool_call_id text not null,
+      dismissed integer not null default 0,
+      primary key(session_path, tool_call_id)
+    );
   `)
 
   // Additive migrations — safe to run on existing DBs.

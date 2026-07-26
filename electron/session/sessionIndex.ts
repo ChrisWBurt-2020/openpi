@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import Database from 'better-sqlite3'
+import type { InsightPayload, SavedInsight } from '../../src/lib/insights'
 import type {
   SessionHistoryPage,
   SessionListItem,
@@ -181,6 +182,96 @@ export class SessionIndexStore {
   }
   setPref(key: string, value: string): void {
     _setPref(this.db, key, value)
+  }
+
+  // ── Pi Signals notebook ───────────────────────────────────────────────────
+  listSavedInsights(workspacePath: string): SavedInsight[] {
+    const rows = this.db
+      .prepare(
+        'select id, workspace_path, session_path, tool_call_id, payload_json, created_at from insight_notebook where workspace_path = ? order by created_at desc'
+      )
+      .all(canonicalizePath(workspacePath)) as Array<{
+      id: string
+      workspace_path: string
+      session_path: string | null
+      tool_call_id: string
+      payload_json: string
+      created_at: string
+    }>
+    return rows.flatMap((row) => {
+      try {
+        return [
+          {
+            id: row.id,
+            workspacePath: row.workspace_path,
+            sessionPath: row.session_path,
+            toolCallId: row.tool_call_id,
+            createdAt: row.created_at,
+            ...(JSON.parse(row.payload_json) as InsightPayload),
+          },
+        ]
+      } catch {
+        return []
+      }
+    })
+  }
+
+  saveInsight(input: {
+    id: string
+    workspacePath: string
+    sessionPath: string | null
+    toolCallId: string
+    insight: InsightPayload
+  }): SavedInsight {
+    const createdAt = new Date().toISOString()
+    const workspacePath = canonicalizePath(input.workspacePath)
+    this.db
+      .prepare(
+        `insert into insight_notebook(id, workspace_path, session_path, tool_call_id, payload_json, created_at)
+         values (@id, @workspacePath, @sessionPath, @toolCallId, @payloadJson, @createdAt)
+         on conflict(workspace_path, session_path, tool_call_id) do update set
+           id = excluded.id,
+           payload_json = excluded.payload_json,
+           created_at = excluded.created_at`
+      )
+      .run({
+        id: input.id,
+        workspacePath,
+        sessionPath: input.sessionPath,
+        toolCallId: input.toolCallId,
+        payloadJson: JSON.stringify(input.insight),
+        createdAt,
+      })
+    return {
+      ...input.insight,
+      id: input.id,
+      workspacePath,
+      sessionPath: input.sessionPath,
+      toolCallId: input.toolCallId,
+      createdAt,
+    }
+  }
+
+  removeSavedInsight(id: string): void {
+    this.db.prepare('delete from insight_notebook where id = ?').run(id)
+  }
+
+  getInsightState(sessionPath: string): Record<string, { dismissed: boolean }> {
+    const rows = this.db
+      .prepare('select tool_call_id, dismissed from insight_state where session_path = ?')
+      .all(sessionPath) as Array<{ tool_call_id: string; dismissed: number }>
+    return Object.fromEntries(
+      rows.map((row) => [row.tool_call_id, { dismissed: row.dismissed === 1 }])
+    )
+  }
+
+  setInsightDismissed(sessionPath: string, toolCallId: string, dismissed: boolean): void {
+    this.db
+      .prepare(
+        `insert into insight_state(session_path, tool_call_id, dismissed) values (?, ?, ?)
+         on conflict(session_path, tool_call_id) do update set dismissed = excluded.dismissed`
+      )
+      .run(sessionPath, toolCallId, dismissed ? 1 : 0)
   }
 
   // ── Private helpers ─────────────────────────────────────────────────────────

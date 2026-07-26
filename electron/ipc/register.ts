@@ -47,6 +47,7 @@ import { registerAgentReviewIpc } from './agentReview'
 import { registerCustomizationsIpc } from './customizations'
 import { registerDiagnosticsIpc } from './diagnostics'
 import { registerFileIpc } from './files'
+import { registerInsightsIpc } from './insights'
 import { registerPreferencesIpc } from './preferences'
 import { registerPtyIpc } from './pty'
 import { registerResourcesIpc } from './resources'
@@ -125,6 +126,10 @@ export function registerMainIpcHandlers(deps: RegisterMainIpcHandlersDeps): void
     ipcMain: deps.ipcMain,
     getPref: (key) => deps.getSessionIndex()?.getPref(key) ?? null,
     setPref: (key, value) => deps.getSessionIndex()?.setPref(key, value),
+  })
+  registerInsightsIpc({
+    ipcMain: deps.ipcMain,
+    getSessionIndex: deps.getSessionIndex,
   })
   registerSoundIpc({ ipcMain: deps.ipcMain, playSoundEffectId })
   registerWorkbenchIpc({

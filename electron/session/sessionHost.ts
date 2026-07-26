@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { BrowserWindow } from 'electron'
+import type { InsightMode } from '../../src/lib/insights'
 import { IPC, type OutputLine, type SessionReady } from '../../src/lib/ipc'
 import { removeWorktree } from '../git/worktree'
 import type { SidecarMessage } from '../pi/sidecar'
@@ -35,6 +36,7 @@ let _deferredThreadId: string | null = null
 let _refreshInFlight: Promise<void> | null = null
 const MAX_LIVE_THREADS = 3
 let _activeThreadId: string | null = null
+let _insightMode: InsightMode = 'mentor'
 const _threadBySessionFile = new Map<string, string>()
 const _stateByThread = new Map<string, SessionState>()
 const _readyByThread = new Map<string, SessionReady>()
@@ -82,6 +84,15 @@ export function setSessionHostMainWindow(win: BrowserWindow | null): void {
 
 export function setSessionHostSessionIndex(si: SessionIndexStore | null): void {
   _sessionIndex = si
+  const savedMode = si?.getPref('insights.mode')
+  if (
+    savedMode === 'off' ||
+    savedMode === 'critical' ||
+    savedMode === 'balanced' ||
+    savedMode === 'mentor'
+  ) {
+    _insightMode = savedMode
+  }
 }
 
 function sendToMainWindow(channel: string, ...args: unknown[]): void {
@@ -141,6 +152,13 @@ export function isForegroundThread(threadId: string): boolean {
 
 export function resolveThreadCwd(threadId: string): string | null {
   return _stateByThread.get(threadId)?.cwd ?? null
+}
+
+export function setInsightMode(mode: InsightMode): void {
+  _insightMode = mode
+  _sidecarPool.forEach((worker) => {
+    worker.send({ type: 'set_insight_mode', mode })
+  })
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -270,6 +288,7 @@ export async function startSession(cwd: string, options: StartSessionOptions = {
   const acquired = _sidecarPool.acquire(threadId)
   if (!acquired.ok) throw new Error(acquired.message)
   _activeThreadId = threadId
+  acquired.worker.send({ type: 'set_insight_mode', mode: _insightMode })
   _sidecarPool.setForeground(threadId)
   _deferredThreadId = null
   _state = null

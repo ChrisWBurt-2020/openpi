@@ -200,6 +200,35 @@ export function buildCoreSlashCommands(ctx: CoreCommandContext): CoreSlashComman
       },
     },
     {
+      id: 'signals.cycle',
+      slash: 'insights',
+      name: '/insights',
+      description: 'Cycle Pi Signals cadence (mentor, balanced, critical, off)',
+      category: 'settings',
+      onSelect: () => {
+        const order = ['mentor', 'balanced', 'critical', 'off'] as const
+        void window.openpi.getPref('insights.mode').then((current) => {
+          const index = order.indexOf(current as (typeof order)[number])
+          const next = order[(index + 1) % order.length] ?? 'mentor'
+          void window.openpi.setPref('insights.mode', next)
+        })
+        return true
+      },
+    },
+    {
+      id: 'signals.settings',
+      slash: 'signals',
+      name: '/signals',
+      description: 'Open Pi Signals preferences and notebook controls',
+      category: 'settings',
+      onSelect: () => {
+        document.dispatchEvent(
+          new CustomEvent('openpi:open-customizations', { detail: { tab: 'general' } })
+        )
+        return true
+      },
+    },
+    {
       id: 'settings.open',
       slash: 'settings',
       name: '/settings',

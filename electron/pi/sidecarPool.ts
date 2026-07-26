@@ -156,4 +156,8 @@ export class SidecarPool<W> {
   releaseAll(): void {
     for (const threadId of [...this.entries.keys()]) this.release(threadId)
   }
+
+  forEach(callback: (worker: W, threadId: string) => void): void {
+    for (const [threadId, entry] of this.entries) callback(entry.worker, threadId)
+  }
 }

@@ -4,6 +4,14 @@
  * Renderer imports types only — never imports electron or node builtins.
  */
 import { z } from 'zod'
+import {
+  insightDismissedRequestSchema,
+  listInsightStateRequestSchema,
+  listSavedInsightsRequestSchema,
+  removeSavedInsightRequestSchema,
+  savedInsightSchema,
+  saveInsightRequestSchema,
+} from '../insights'
 
 // Channel names moved to ./channels
 export { IPC } from './channels'
@@ -791,6 +799,16 @@ export const setPrefSchema = z.object({
   value: z.string().max(10_000),
 })
 export type SetPref = z.infer<typeof setPrefSchema>
+
+export {
+  insightDismissedRequestSchema,
+  listInsightStateRequestSchema,
+  listSavedInsightsRequestSchema,
+  removeSavedInsightRequestSchema,
+  savedInsightSchema,
+  saveInsightRequestSchema,
+}
+export type SavedInsightPayload = z.infer<typeof savedInsightSchema>
 
 export const playSoundEffectSchema = z.object({
   sound: z.string().min(1).max(50),
