@@ -265,6 +265,10 @@ export class PiSidecarHost {
     child: SidecarProcess,
     request: WorkspaceRequest
   ): Promise<void> {
+    const startedAt = Date.now()
+    process.stderr.write(
+      `[openpi:ssh-workspace] request ${request.requestId} (${request.operation}) received\n`
+    )
     try {
       if (!this.onWorkspaceRequest) throw new Error('SSH workspace transport is unavailable')
       const data = await this.onWorkspaceRequest(request)
@@ -275,6 +279,9 @@ export class PiSidecarHost {
         message: request.operation,
         correlationId: request.requestId,
       })
+      process.stderr.write(
+        `[openpi:ssh-workspace] request ${request.requestId} (${request.operation}) completed in ${Date.now() - startedAt}ms\n`
+      )
       sendToSidecar(child, {
         type: 'workspace_result',
         requestId: request.requestId,
@@ -286,6 +293,9 @@ export class PiSidecarHost {
         requestId: request.requestId,
         operation: request.operation,
       })
+      process.stderr.write(
+        `[openpi:ssh-workspace] request ${request.requestId} (${request.operation}) failed in ${Date.now() - startedAt}ms: ${error instanceof Error ? error.message : String(error)}\n`
+      )
       const response: WorkspaceResult = {
         type: 'workspace_result',
         requestId: request.requestId,

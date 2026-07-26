@@ -301,94 +301,97 @@ export class RemoteConnectionManager {
     }
 
     try {
-      switch (request.operation) {
-        case 'read': {
-          const target = await toRemote(this.requireWorkspacePath(request))
-          return (await this.sftpReadFile(await requireSftp(), target)).toString('utf8')
-        }
-        case 'access': {
-          const target = await toRemote(this.requireWorkspacePath(request))
-          await this.sftpStat(await requireSftp(), target)
-          return null
-        }
-        case 'stat': {
-          const target = await toRemote(this.requireWorkspacePath(request))
-          const stats = await this.sftpStat(await requireSftp(), target)
-          return { isDirectory: Boolean(stats.mode && (stats.mode & 0o170000) === 0o040000) }
-        }
-        case 'readdir': {
-          const target = await toRemote(this.requireWorkspacePath(request))
-          const entries = await this.sftpReadDir(await requireSftp(), target)
-          return entries.filter((entry) => entry !== '.' && entry !== '..')
-        }
-        case 'write': {
-          const target = await toRemote(this.requireWorkspacePath(request), true)
-          if (request.pattern === 'mkdir') {
-            await this.sftpMkdirp(await requireSftp(), target, root)
+      return await this.withWorkspaceDeadline(connectionId, client, request, async () => {
+        switch (request.operation) {
+          case 'read': {
+            const target = await toRemote(this.requireWorkspacePath(request))
+            return (await this.sftpReadFile(await requireSftp(), target)).toString('utf8')
+          }
+          case 'access': {
+            const target = await toRemote(this.requireWorkspacePath(request))
+            await this.sftpStat(await requireSftp(), target)
             return null
           }
-          if (typeof request.content !== 'string') throw new Error('Remote write requires content')
-          await this.sftpWriteFile(await requireSftp(), target, request.content)
-          return null
-        }
-        case 'find': {
-          const target = await toRemote(this.requireWorkspacePath(request))
-          const output = await this.execWorkspaceFind(client, target, request.pattern ?? '*')
-          return output
-            .split(/\r?\n/)
-            .filter(Boolean)
-            .map((entry) => path.join(request.path ?? virtualCwd, entry.replace(/^\.\//, '')))
-        }
-        case 'tree': {
-          const target = await toRemote(this.requireWorkspacePath(request))
-          const ignored = new Set([
-            '.git',
-            'node_modules',
-            'dist',
-            'build',
-            'out',
-            '__pycache__',
-            '.venv',
-            'venv',
-            'target',
-            '.cache',
-            'coverage',
-          ])
-          const files: string[] = []
-          const pending = [{ remote: target, relative: '' }]
-          while (pending.length > 0 && files.length < 5_000) {
-            const current = pending.shift()
-            if (!current) break
-            const entries = await this.sftpReadDirDetailed(await requireSftp(), current.remote)
-            for (const entry of entries) {
-              if (ignored.has(entry.filename)) continue
-              const relative = current.relative
-                ? `${current.relative}/${entry.filename}`
-                : entry.filename
-              const remote = path.posix.join(current.remote, entry.filename)
-              if (entry.isDirectory) pending.push({ remote, relative })
-              else files.push(path.join(request.path ?? virtualCwd, relative))
-              if (files.length >= 5_000) break
-            }
+          case 'stat': {
+            const target = await toRemote(this.requireWorkspacePath(request))
+            const stats = await this.sftpStat(await requireSftp(), target)
+            return { isDirectory: Boolean(stats.mode && (stats.mode & 0o170000) === 0o040000) }
           }
-          return files
+          case 'readdir': {
+            const target = await toRemote(this.requireWorkspacePath(request))
+            const entries = await this.sftpReadDir(await requireSftp(), target)
+            return entries.filter((entry) => entry !== '.' && entry !== '..')
+          }
+          case 'write': {
+            const target = await toRemote(this.requireWorkspacePath(request), true)
+            if (request.pattern === 'mkdir') {
+              await this.sftpMkdirp(await requireSftp(), target, root)
+              return null
+            }
+            if (typeof request.content !== 'string')
+              throw new Error('Remote write requires content')
+            await this.sftpWriteFile(await requireSftp(), target, request.content)
+            return null
+          }
+          case 'find': {
+            const target = await toRemote(this.requireWorkspacePath(request))
+            const output = await this.execWorkspaceFind(client, target, request.pattern ?? '*')
+            return output
+              .split(/\r?\n/)
+              .filter(Boolean)
+              .map((entry) => path.join(request.path ?? virtualCwd, entry.replace(/^\.\//, '')))
+          }
+          case 'tree': {
+            const target = await toRemote(this.requireWorkspacePath(request))
+            const ignored = new Set([
+              '.git',
+              'node_modules',
+              'dist',
+              'build',
+              'out',
+              '__pycache__',
+              '.venv',
+              'venv',
+              'target',
+              '.cache',
+              'coverage',
+            ])
+            const files: string[] = []
+            const pending = [{ remote: target, relative: '' }]
+            while (pending.length > 0 && files.length < 5_000) {
+              const current = pending.shift()
+              if (!current) break
+              const entries = await this.sftpReadDirDetailed(await requireSftp(), current.remote)
+              for (const entry of entries) {
+                if (ignored.has(entry.filename)) continue
+                const relative = current.relative
+                  ? `${current.relative}/${entry.filename}`
+                  : entry.filename
+                const remote = path.posix.join(current.remote, entry.filename)
+                if (entry.isDirectory) pending.push({ remote, relative })
+                else files.push(path.join(request.path ?? virtualCwd, relative))
+                if (files.length >= 5_000) break
+              }
+            }
+            return files
+          }
+          case 'bash': {
+            const operationCwd = workspaceCandidate(root, virtualCwd, request.cwd ?? virtualCwd)
+            if (!request.command) throw new Error('Remote bash requires a command')
+            return this.execWorkspaceShell(
+              client,
+              root,
+              operationCwd,
+              request.command,
+              request.timeout
+            )
+          }
+          default: {
+            const exhaustive: never = request.operation
+            throw new Error(`Unsupported SSH workspace operation: ${exhaustive}`)
+          }
         }
-        case 'bash': {
-          const operationCwd = workspaceCandidate(root, virtualCwd, request.cwd ?? virtualCwd)
-          if (!request.command) throw new Error('Remote bash requires a command')
-          return this.execWorkspaceShell(
-            client,
-            root,
-            operationCwd,
-            request.command,
-            request.timeout
-          )
-        }
-        default: {
-          const exhaustive: never = request.operation
-          throw new Error(`Unsupported SSH workspace operation: ${exhaustive}`)
-        }
-      }
+      })
     } catch (error) {
       recordDiagnosticError('ssh-workspace', 'operation_failed', error, {
         requestId: request.requestId,
@@ -696,6 +699,63 @@ export class RemoteConnectionManager {
             'exec sh -c "$command"\n'
         )
       })
+    })
+  }
+
+  /**
+   * A sidecar must always receive a terminal response. ssh2 can retain a
+   * seemingly connected Client whose channel-open callback never fires after a
+   * network transition. Bound the main-side operation too, then discard that
+   * client so the next user request establishes a fresh multiplexed transport.
+   */
+  private withWorkspaceDeadline<T>(
+    connectionId: string,
+    client: Client,
+    request: WorkspaceRequest,
+    operation: () => Promise<T>
+  ): Promise<T> {
+    const timeoutMs =
+      request.operation === 'bash' && typeof request.timeout === 'number'
+        ? (request.timeout + 2) * 1_000
+        : CONNECTION_TIMEOUT_MS - 1_000
+    return new Promise<T>((resolve, reject) => {
+      let settled = false
+      const finish = (callback: () => void): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeout)
+        callback()
+      }
+      const timeout = setTimeout(() => {
+        finish(() => {
+          this.resetTimedOutConnection(connectionId, client)
+          reject(
+            new Error(
+              `SSH workspace ${request.operation} timed out after ${timeoutMs / 1_000}s; the connection was reset`
+            )
+          )
+        })
+      }, timeoutMs)
+      void operation().then(
+        (value) => finish(() => resolve(value)),
+        (error: unknown) => finish(() => reject(error))
+      )
+    })
+  }
+
+  private resetTimedOutConnection(connectionId: string, client: Client): void {
+    const live = this.live.get(connectionId)
+    if (!live || live.client !== client) return
+    this.live.delete(connectionId)
+    live.sftp?.end()
+    client.destroy()
+    this.setState(connectionId, 'reconnecting', null, 'SSH workspace operation timed out')
+    recordDiagnostic({
+      level: 'warn',
+      area: 'ssh-workspace',
+      action: 'connection_reset',
+      message: 'Reset stalled SSH transport after a workspace operation timeout.',
+      data: { connectionId },
     })
   }
 
