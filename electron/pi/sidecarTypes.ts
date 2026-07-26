@@ -1,4 +1,5 @@
 import type { InsightMode } from '../../src/lib/insights'
+import type { ComposerIntent, RunCheckpoint, RunInput, RunOutcome } from '../../src/lib/runs'
 import type {
   RemoteWorkspaceDescriptor,
   WorkspaceResult,
@@ -25,7 +26,13 @@ export type SidecarCommand =
       workspaceTrusted?: boolean
       remoteWorkspace?: RemoteWorkspaceDescriptor
     }
-  | { type: 'prompt'; text: string; contextPrefix?: string }
+  | {
+      type: 'prompt'
+      text: string
+      contextPrefix?: string
+      intent?: ComposerIntent
+      runContext?: { id: string; epoch: number; contractVersion: number; continuationId?: string }
+    }
   | { type: 'set_insight_mode'; mode: InsightMode }
   | { type: 'steer'; text: string; contextPrefix?: string }
   | { type: 'follow_up'; text: string; contextPrefix?: string }
@@ -101,6 +108,28 @@ export type SidecarMessage =
   | { type: 'skill_file_result'; requestId: string; content: string | null }
   | { type: 'provider_login_event'; requestId: string; event: unknown }
   | { type: 'output_append'; line: { level: string; text: string; ts: number } }
+  | {
+      type: 'run_control'
+      event:
+        | {
+            type: 'outcome'
+            context: { id: string; epoch: number; contractVersion: number }
+            payload: RunOutcome
+            toolCallId: string
+          }
+        | {
+            type: 'input'
+            context: { id: string; epoch: number; contractVersion: number }
+            payload: RunInput
+            toolCallId: string
+          }
+        | {
+            type: 'checkpoint'
+            context: { id: string; epoch: number; contractVersion: number }
+            payload: RunCheckpoint
+            toolCallId: string
+          }
+    }
   | {
       type: 'extension_ui_request'
       request: import('../../src/lib/extensionUiTypes').ExtensionUiRequest

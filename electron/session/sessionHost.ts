@@ -5,7 +5,7 @@ import type { BrowserWindow } from 'electron'
 import type { InsightMode } from '../../src/lib/insights'
 import { IPC, type OutputLine, type SessionReady } from '../../src/lib/ipc'
 import { removeWorktree } from '../git/worktree'
-import type { SidecarMessage } from '../pi/sidecar'
+import type { SidecarCommand, SidecarMessage } from '../pi/sidecar'
 import { PiSidecarHost } from '../pi/sidecarHost'
 import { SidecarPool } from '../pi/sidecarPool'
 import type { PiWorkerHost } from '../pi/workerHost'
@@ -197,6 +197,22 @@ export function getDeferredWorkspace(): string | null {
 
 export function getPiSidecarHost(): PiWorkerHost | null {
   return _activeThreadId ? (_sidecarPool.get(_activeThreadId) ?? null) : null
+}
+
+export function getWorkerDiagnostics(): Record<string, unknown> {
+  return {
+    activeThreadId: _activeThreadId,
+    liveThreadIds: _sidecarPool.liveThreadIds(),
+    busyThreadIds: _sidecarPool.busyThreadIds(),
+    executionModes: [..._workerPlans.entries()].map(([threadId, plan]) => ({
+      threadId,
+      mode: plan.kind,
+    })),
+  }
+}
+
+export function sendToThread(threadId: string, command: SidecarCommand): void {
+  _sidecarPool.get(threadId)?.send(command)
 }
 
 export function getActiveThreadId(): string | null {

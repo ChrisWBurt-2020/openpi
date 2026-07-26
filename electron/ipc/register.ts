@@ -7,6 +7,8 @@ import { registerProviderHandlers } from '../pi/providerHost'
 import type { SidecarCommand, SidecarMessage } from '../pi/sidecar'
 import { checkPiUpdate, installPiUpdate } from '../pi/updater'
 import type { RemoteConnectionManager } from '../remote/connectionManager'
+import { registerRunsIpc } from '../runs/ipc'
+import type { RunManager } from '../runs/manager'
 import type * as CustomizationsHost from '../services/customizations'
 import type * as FffHost from '../services/fffHost'
 import { emitSessionError, playSoundEffectId } from '../services/notificationHost'
@@ -37,6 +39,7 @@ import {
   getDeferredWorkspace,
   getPiSidecarHost,
   getSessionState,
+  getWorkerDiagnostics,
   normalizeSessionReady,
   refreshSessionIndex,
   requirePiSidecar,
@@ -87,6 +90,7 @@ interface RegisterMainIpcHandlersDeps {
     message: SidecarCommand & { requestId: string }
   ) => Promise<T>
   sendSidecar: (message: SidecarCommand) => void
+  getRunManager?: () => RunManager | null
 }
 
 async function getCommitAgentContext(
@@ -140,6 +144,7 @@ export function registerMainIpcHandlers(deps: RegisterMainIpcHandlersDeps): void
     getSessionIndex: deps.getSessionIndex,
     getRemoteConnections: deps.getRemoteConnections,
   })
+  registerRunsIpc({ ipcMain: deps.ipcMain, getRunManager: deps.getRunManager ?? (() => null) })
   registerSoundIpc({ ipcMain: deps.ipcMain, playSoundEffectId })
   registerWorkbenchIpc({
     ipcMain: deps.ipcMain,
@@ -160,6 +165,7 @@ export function registerMainIpcHandlers(deps: RegisterMainIpcHandlersDeps): void
     filterBlockedPaths,
     confirmHighRiskMutation: deps.confirmHighRiskMutation,
     getCommitAgentContext: () => getCommitAgentContext(deps.getSessionIndex()),
+    getRemoteConnections: deps.getRemoteConnections,
   })
   registerFileIpc({
     ipcMain: deps.ipcMain,
@@ -167,6 +173,7 @@ export function registerMainIpcHandlers(deps: RegisterMainIpcHandlersDeps): void
     getMainWindow: deps.getMainWindow,
     getGitHost: deps.getGitHost,
     confirmHighRiskMutation: deps.confirmHighRiskMutation,
+    getRemoteConnections: deps.getRemoteConnections,
   })
   registerSettingsIpc({
     ipcMain: deps.ipcMain,
@@ -219,6 +226,12 @@ export function registerMainIpcHandlers(deps: RegisterMainIpcHandlersDeps): void
     refreshSessionIndex,
     normalizeSessionReady,
     applySessionValues,
+    startRun: (input) => {
+      const manager = deps.getRunManager?.()
+      if (!manager) throw new Error('Run manager is not ready')
+      return manager.start(input)
+    },
+    pauseRunForThread: (threadId) => deps.getRunManager?.()?.pauseThread(threadId) ?? false,
   })
   registerWorkspacesIpc({
     ipcMain: deps.ipcMain,
@@ -246,5 +259,7 @@ export function registerMainIpcHandlers(deps: RegisterMainIpcHandlersDeps): void
     getCustomizationsHost: deps.getCustomizationsHost,
     getGitHost: deps.getGitHost,
     getPiSidecarHost,
+    getWorkerDiagnostics,
+    getRuns: () => (deps.getRunManager?.()?.list() ?? []) as Record<string, unknown>[],
   })
 }

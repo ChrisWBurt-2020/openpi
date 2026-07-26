@@ -32,6 +32,7 @@ import {
 } from '../../src/lib/ipc'
 import { createWorktree, generateWorktreePath, getCurrentBranch } from '../git/worktree'
 import type { SidecarCommand, SidecarMessage } from '../pi/sidecar'
+import { CheckoutBusyError } from '../runs/manager'
 import {
   readTaskSessionHistory,
   resolveMostRecentSubSessionPath,
@@ -76,6 +77,11 @@ interface SessionsIpcDeps {
   refreshSessionIndex: () => Promise<void>
   normalizeSessionReady: (payload: SessionReady) => SessionReady
   applySessionValues: (ready: SessionReady) => void
+  startRun?: (input: { threadId: string; sessionPath: string | null; workspacePath: string }) => {
+    id: string
+    contractVersion: number
+  }
+  pauseRunForThread?: (threadId: string) => boolean
 }
 
 function emptySessionStats(): SessionStats {
@@ -91,6 +97,7 @@ function emptySessionStats(): SessionStats {
     sessionFile: null,
     sessionId: null,
     isStreaming: false,
+    statsError: null,
   }
 }
 
@@ -135,12 +142,35 @@ export function registerSessionsIpc(deps: SessionsIpcDeps): void {
 
   deps.ipcMain.handle(IPC.SESSION_PROMPT, async (_event, raw: unknown) => {
     if (!(await deps.ensureActiveSession())) return
-    const { text, contextPrefix } = sessionPromptSchema.parse(raw)
+    const { text, contextPrefix, intent } = sessionPromptSchema.parse(raw)
+    const session = deps.getSessionState()
+    let run: { id: string; contractVersion: number } | undefined
+    if (intent === 'run' && session) {
+      try {
+        run = deps.startRun?.({
+          threadId: session.threadId,
+          sessionPath: session.sessionFile,
+          workspacePath: session.cwd,
+        })
+      } catch (error) {
+        if (error instanceof CheckoutBusyError) {
+          return {
+            accepted: false as const,
+            reason: 'checkout_busy' as const,
+            message: error.message,
+          }
+        }
+        throw error
+      }
+    }
     deps.sendSidecar({
       type: 'prompt',
       text,
       contextPrefix: injectWorkbenchPrefix(contextPrefix, deps.buildWorkbenchContextPrefix),
+      intent,
+      runContext: run ? { id: run.id, epoch: 1, contractVersion: run.contractVersion } : undefined,
     })
+    return { accepted: true as const }
   })
 
   deps.ipcMain.handle(IPC.SESSION_STEER, async (_event, raw: unknown) => {
@@ -199,7 +229,9 @@ export function registerSessionsIpc(deps: SessionsIpcDeps): void {
   )
 
   deps.ipcMain.handle(IPC.SESSION_ABORT, async () => {
-    if (!deps.getSessionState()) return
+    const session = deps.getSessionState()
+    if (!session) return
+    if (deps.pauseRunForThread?.(session.threadId)) return
     deps.sendSidecar({ type: 'abort' })
   })
 

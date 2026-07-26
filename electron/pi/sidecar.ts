@@ -35,6 +35,7 @@ import { bundledThemePaths } from '../services/bundledThemes'
 import { createOpenPiExtensionUIContext } from './extensionUiContext'
 import { fulfillExtensionUiPending } from './extensionUiPending'
 import { createInsightsExtension } from './insightsExtension'
+import { createRunExtension, type RunContext } from './runExtension'
 import { enforceIgnoreScriptsEnv } from './safePackageManager'
 import { defaultCloneDir, resolveSessionAccess, type SessionAccessDecision } from './sessionAccess'
 import {
@@ -84,6 +85,7 @@ let _cachedResourceLoader: {
   loader: InstanceType<typeof DefaultResourceLoader>
 } | null = null
 let _remoteWorkspace: RemoteWorkspaceDescriptor | null = null
+let _runContext: RunContext | null = null
 let _workspaceTransport: WorkspaceTransportClient
 const _pendingOAuthPrompts = new Map<string, (v: string) => void>()
 
@@ -424,6 +426,10 @@ async function getResourceLoader(cwd: string, workspaceTrusted: boolean) {
     additionalThemePaths: bundledThemePaths(),
     extensionFactories: [
       createInsightsExtension(() => insightMode),
+      createRunExtension(
+        () => _runContext,
+        (event) => send({ type: 'run_control', event })
+      ),
       createWorkspaceExtension(() => _remoteWorkspace, _workspaceTransport),
     ],
     noContextFiles: Boolean(_remoteWorkspace),
@@ -541,6 +547,7 @@ async function startSession(
   // moved on from. Bump first so late events are already stale by the time
   // teardown starts.
   _sessionEpoch += 1
+  _workspaceTransport.rejectAll('SSH workspace session was replaced before the operation completed')
 
   // Dispose previous session — emit session_shutdown first so extensions
   // (e.g. pi-task polling) clear timers and drop captured `pi` before ctx invalidates.
@@ -801,6 +808,7 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
 
     case 'prompt': {
       if (!state) return
+      _runContext = cmd.intent === 'run' ? (cmd.runContext ?? null) : null
       const trimmed = cmd.text.trim()
       const invocationName = slashInvocationName(trimmed)
       if (invocationName) {
@@ -916,6 +924,7 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
     }
 
     case 'abort': {
+      _workspaceTransport.rejectAll('SSH workspace operations were cancelled by Stop Agent')
       if (!state) return
       await state.session.abort()
       break
@@ -975,8 +984,16 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
         break
       }
       const session = state.session
-      const stats = session.getSessionStats()
-      const ctx = stats.contextUsage ?? session.getContextUsage()
+      let stats: ReturnType<typeof session.getSessionStats> | null = null
+      try {
+        stats = session.getSessionStats()
+      } catch (error) {
+        outputLine(
+          'warn',
+          `[stats] unable to calculate session totals: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`
+        )
+      }
+      const ctx = stats?.contextUsage ?? session.getContextUsage()
       const model = session.model as
         | {
             id: string
@@ -991,8 +1008,8 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
         type: 'session_info_result',
         requestId: cmd.requestId,
         info: {
-          sessionFile: stats.sessionFile ?? session.sessionFile ?? null,
-          sessionId: stats.sessionId ?? session.sessionId ?? null,
+          sessionFile: stats?.sessionFile ?? session.sessionFile ?? null,
+          sessionId: stats?.sessionId ?? session.sessionId ?? null,
           sessionName: session.sessionName ?? null,
           model: model
             ? {
@@ -1159,27 +1176,38 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
       }
       // Use the Pi SDK's authoritative pre-computed stats —
       // do NOT manually sum from agent.state.messages (wrong data source).
-      const sdkStats = state.session.getSessionStats()
+      let sdkStats: ReturnType<typeof state.session.getSessionStats> | null = null
+      let statsError: string | null = null
+      try {
+        sdkStats = state.session.getSessionStats()
+      } catch (error) {
+        statsError = error instanceof Error ? error.message : String(error)
+        outputLine(
+          'warn',
+          `[stats] unable to calculate session totals: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`
+        )
+      }
       // contextUsage gives current context window fill (what Pi TUI shows),
       // NOT the cumulative session totals from getSessionStats().tokens.
-      const ctxUsage = sdkStats.contextUsage ?? state.session.getContextUsage()
+      const ctxUsage = sdkStats?.contextUsage ?? state.session.getContextUsage()
       send({
         type: 'stats_result',
         requestId: cmd.requestId,
         stats: {
-          inputTokens: sdkStats.tokens.input,
-          outputTokens: sdkStats.tokens.output,
-          cacheReadTokens: sdkStats.tokens.cacheRead,
-          cacheWriteTokens: sdkStats.tokens.cacheWrite,
-          cost: sdkStats.cost,
+          inputTokens: sdkStats?.tokens.input ?? 0,
+          outputTokens: sdkStats?.tokens.output ?? 0,
+          cacheReadTokens: sdkStats?.tokens.cacheRead ?? 0,
+          cacheWriteTokens: sdkStats?.tokens.cacheWrite ?? 0,
+          cost: sdkStats?.cost ?? 0,
           contextUsagePercent: ctxUsage?.percent ?? null,
           contextTokens: ctxUsage?.tokens ?? null,
           contextWindow: ctxUsage?.contextWindow ?? null,
-          sessionFile: sdkStats.sessionFile ?? state.session.sessionFile ?? null,
-          sessionId: sdkStats.sessionId ?? state.session.sessionId ?? null,
+          sessionFile: sdkStats?.sessionFile ?? state.session.sessionFile ?? null,
+          sessionId: sdkStats?.sessionId ?? state.session.sessionId ?? null,
           isStreaming:
             (state.session.agent as unknown as { state?: { isStreaming?: boolean } }).state
               ?.isStreaming ?? false,
+          statsError,
         },
       })
       break
@@ -1376,6 +1404,9 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
     }
 
     case 'stop': {
+      _workspaceTransport.rejectAll(
+        'Pi sidecar stopped before the SSH workspace operation completed'
+      )
       if (state) {
         state.unsubscribe()
         await emitSessionShutdown(state.session, 'quit')

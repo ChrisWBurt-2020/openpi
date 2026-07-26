@@ -58,6 +58,11 @@ export const IPC = {
   RELOAD_SESSION: 'openpi:reload-session',
   GET_SESSION_INFO: 'openpi:get-session-info',
   COPY_LAST_ASSISTANT_TEXT: 'openpi:copy-last-assistant-text',
+  RUN_GET: 'openpi:run-get',
+  RUN_LIST: 'openpi:run-list',
+  RUN_PAUSE: 'openpi:run-pause',
+  RUN_RESUME: 'openpi:run-resume',
+  RUN_CANCEL: 'openpi:run-cancel',
 
   // PTY terminal (renderer → main)
   PTY_CREATE: 'openpi:pty-create',
@@ -168,6 +173,7 @@ export const IPC = {
 
   // main → renderer (on)
   SESSION_EVENT: 'openpi:session-event',
+  RUN_CHANGED: 'openpi:run-changed',
   SESSION_READY: 'openpi:session-ready',
   SESSION_ERROR: 'openpi:session-error',
   SESSION_INDEX_UPDATED: 'openpi:session-index-updated',

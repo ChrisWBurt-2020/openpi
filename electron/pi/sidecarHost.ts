@@ -9,7 +9,12 @@ import { type ChildProcess, fork, spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, type UtilityProcess, utilityProcess } from 'electron'
-import type { WorkspaceRequest, WorkspaceResult } from '../remote/workspaceProtocol'
+import {
+  type WorkspaceRequest,
+  type WorkspaceResult,
+  workspaceRequestSchema,
+} from '../remote/workspaceProtocol'
+import { recordDiagnostic, recordDiagnosticError } from '../services/diagnostics'
 import type { SidecarCommand, SidecarMessage } from './sidecar'
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url))
@@ -150,7 +155,34 @@ export class PiSidecarHost {
         typeof msg === 'object' &&
         (msg as { type?: string }).type === 'workspace_request'
       ) {
-        const request = msg as WorkspaceRequest
+        const parsed = workspaceRequestSchema.safeParse(msg)
+        if (!parsed.success) {
+          recordDiagnosticError('ssh-workspace', 'invalid_request', parsed.error)
+          const requestId =
+            typeof (msg as { requestId?: unknown }).requestId === 'string'
+              ? (msg as { requestId: string }).requestId
+              : 'invalid-workspace-request'
+          sendToSidecar(child, {
+            type: 'workspace_result',
+            requestId,
+            ok: false,
+            error: 'OpenPi rejected an invalid SSH workspace request.',
+          })
+          return
+        }
+        const request = parsed.data
+        recordDiagnostic({
+          level: 'debug',
+          area: 'ssh-workspace',
+          action: 'request_received',
+          message: request.operation,
+          correlationId: request.requestId,
+          data: {
+            operation: request.operation,
+            hasPath: Boolean(request.path),
+            hasCommand: Boolean(request.command),
+          },
+        })
         void this.handleWorkspaceRequest(child, request)
         return
       }
@@ -236,6 +268,13 @@ export class PiSidecarHost {
     try {
       if (!this.onWorkspaceRequest) throw new Error('SSH workspace transport is unavailable')
       const data = await this.onWorkspaceRequest(request)
+      recordDiagnostic({
+        level: 'debug',
+        area: 'ssh-workspace',
+        action: 'request_completed',
+        message: request.operation,
+        correlationId: request.requestId,
+      })
       sendToSidecar(child, {
         type: 'workspace_result',
         requestId: request.requestId,
@@ -243,6 +282,10 @@ export class PiSidecarHost {
         data,
       })
     } catch (error) {
+      recordDiagnosticError('ssh-workspace', 'request_failed', error, {
+        requestId: request.requestId,
+        operation: request.operation,
+      })
       const response: WorkspaceResult = {
         type: 'workspace_result',
         requestId: request.requestId,

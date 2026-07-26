@@ -14,6 +14,8 @@ import {
   writeFileRequestSchema,
 } from '../../src/lib/ipc'
 import type * as GitHost from '../git/gitHost'
+import type { RemoteConnectionManager } from '../remote/connectionManager'
+import { parseRemoteWorkspace, remoteVirtualCwd } from '../remote/fileTree'
 import { checkProtectedPath } from '../services/protectedPaths'
 
 interface ConfirmMutationOptions {
@@ -28,6 +30,7 @@ interface FileIpcDeps {
   getMainWindow: () => BrowserWindow | null
   getGitHost: () => Promise<typeof GitHost>
   confirmHighRiskMutation: (options: ConfirmMutationOptions) => Promise<boolean>
+  getRemoteConnections: () => RemoteConnectionManager | null
 }
 
 function resolveWorkspaceRelativePath(cwd: string, relPath: string, action: string): string {
@@ -45,7 +48,7 @@ function isGitMetadataPath(relPath: string): boolean {
 }
 
 export function registerFileIpc(deps: FileIpcDeps): void {
-  deps.ipcMain.handle(IPC.READ_FILE, (_event, raw: unknown): FileContent | null => {
+  deps.ipcMain.handle(IPC.READ_FILE, async (_event, raw: unknown): Promise<FileContent | null> => {
     const parsed = readFileRequestSchema.parse(raw)
     const cwd = deps.getCwd() ?? parsed.cwd
     if (!cwd) {
@@ -53,6 +56,31 @@ export function registerFileIpc(deps: FileIpcDeps): void {
       return null
     }
     const { path: relPath } = parsed
+    const remote = parseRemoteWorkspace(cwd)
+    if (remote) {
+      const manager = deps.getRemoteConnections()
+      if (!manager) return null
+      const virtualCwd = remoteVirtualCwd(remote.connectionId, remote.root)
+      const content = await manager.workspaceOperation(
+        remote.connectionId,
+        remote.root,
+        virtualCwd,
+        {
+          type: 'workspace_request',
+          requestId: crypto.randomUUID(),
+          operation: 'read',
+          path: path.join(virtualCwd, relPath),
+        }
+      )
+      if (typeof content !== 'string') return null
+      const size = Buffer.byteLength(content, 'utf8')
+      const limit = 500_000
+      return {
+        content: size > limit ? `${content.slice(0, limit)}\n… [file truncated]` : content,
+        size,
+        truncated: size > limit,
+      }
+    }
     let full: string
     try {
       full = resolveWorkspaceRelativePath(cwd, relPath, 'read')

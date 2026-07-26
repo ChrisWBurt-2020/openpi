@@ -32,6 +32,7 @@ export type AppInfo = z.infer<typeof appInfoSchema>
 export const sessionPromptSchema = z.object({
   text: z.string().min(1).max(100_000),
   contextPrefix: z.string().min(1).max(100_000).optional(),
+  intent: z.enum(['ask', 'run']).optional().default('ask'),
 })
 export type SessionPrompt = z.infer<typeof sessionPromptSchema>
 
@@ -138,6 +139,7 @@ export const sessionStatsSchema = z.object({
   sessionFile: z.string().nullable(),
   sessionId: z.string().nullable(),
   isStreaming: z.boolean(),
+  statsError: z.string().nullable().optional(),
 })
 export type SessionStats = z.infer<typeof sessionStatsSchema>
 
@@ -425,6 +427,10 @@ export const diagnosticsBundleSchema = z.object({
   runtime: z.record(z.unknown()),
   workspace: z.record(z.unknown()),
   sidecar: z.record(z.unknown()),
+  workers: z.record(z.unknown()).optional(),
+  runs: z.array(z.record(z.unknown())).optional(),
+  recentEvents: z.array(z.record(z.unknown())).optional(),
+  lastFatal: z.record(z.unknown()).nullable().optional(),
   resources: z.record(z.unknown()).nullable(),
   git: z.record(z.unknown()).nullable(),
   database: z.record(z.unknown()),
@@ -545,6 +551,8 @@ export const sessionHistoryMessageSchema = z.object({
   streaming: z.boolean().optional(),
   /** Display name of the model that produced this message */
   modelName: z.string().optional(),
+  /** Provider-visible failure for an assistant response, when Pi reports one. */
+  errorMessage: z.string().optional(),
 })
 export type SessionHistoryMessage = z.infer<typeof sessionHistoryMessageSchema>
 

@@ -26,13 +26,18 @@ import type {
   WorkspaceTrustResult,
 } from '../../src/lib/ipc'
 import { IPC } from '../../src/lib/ipc'
+import type { SessionPromptResult } from '../../src/lib/runs'
 
 export const sessionApi = {
   getAppInfo: (): Promise<AppInfo> => ipcRenderer.invoke(IPC.GET_APP_INFO),
   pickWorkspace: (): Promise<PickWorkspaceResult> => ipcRenderer.invoke(IPC.PICK_WORKSPACE),
 
-  prompt: (text: string, contextPrefix?: string): Promise<void> =>
-    ipcRenderer.invoke(IPC.SESSION_PROMPT, { text, contextPrefix }),
+  prompt: (
+    text: string,
+    contextPrefix?: string,
+    intent: 'ask' | 'run' = 'ask'
+  ): Promise<SessionPromptResult> =>
+    ipcRenderer.invoke(IPC.SESSION_PROMPT, { text, contextPrefix, intent }),
   steer: (text: string, contextPrefix?: string): Promise<void> =>
     ipcRenderer.invoke(IPC.SESSION_STEER, { text, contextPrefix }),
   followUp: (text: string, contextPrefix?: string): Promise<void> =>

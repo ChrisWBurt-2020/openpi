@@ -19,6 +19,7 @@ import {
   threadSessionEventSchema,
   threadSessionReadySchema,
 } from '../../src/lib/ipc'
+import { type RunState, runStateSchema } from '../../src/lib/runs'
 
 interface RemoteSessionStatusPayload {
   app: string
@@ -47,11 +48,12 @@ export const eventsApi = {
   onSessionEvent: (cb: (payload: ThreadSessionEvent) => void) => {
     const handler = (_: Electron.IpcRendererEvent, payload: ThreadSessionEvent | SessionEvent) => {
       const scoped = threadSessionEventSchema.safeParse(payload)
-      cb(
-        scoped.success
-          ? scoped.data
-          : { threadId: 'legacy', event: sessionEventSchema.parse(payload) }
-      )
+      if (scoped.success) {
+        cb(scoped.data)
+        return
+      }
+      const legacy = sessionEventSchema.safeParse(payload)
+      if (legacy.success) cb({ threadId: 'legacy', event: legacy.data })
     }
     ipcRenderer.on(IPC.SESSION_EVENT, handler)
     return () => ipcRenderer.removeListener(IPC.SESSION_EVENT, handler)
@@ -72,6 +74,15 @@ export const eventsApi = {
     const handler = () => cb()
     ipcRenderer.on(IPC.SESSION_INDEX_UPDATED, handler)
     return () => ipcRenderer.removeListener(IPC.SESSION_INDEX_UPDATED, handler)
+  },
+
+  onRunChanged: (cb: (state: RunState) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, payload: unknown) => {
+      const parsed = runStateSchema.safeParse(payload)
+      if (parsed.success) cb(parsed.data)
+    }
+    ipcRenderer.on(IPC.RUN_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IPC.RUN_CHANGED, handler)
   },
 
   onRemoteSessionStatus: (cb: (payload: RemoteSessionStatusPayload) => void) => {

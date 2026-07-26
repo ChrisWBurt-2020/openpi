@@ -33,4 +33,28 @@ describe('compaction event rendering', () => {
       'Context compaction failed — will retry: provider unavailable'
     )
   })
+
+  it('keeps a tool card renderable when a tool result contains a null content block', () => {
+    const started = applySessionEvent([], {
+      type: 'message_start',
+      message: { role: 'assistant', content: [] },
+    })
+    const withTool = applySessionEvent(started, {
+      type: 'tool_execution_start',
+      toolCallId: 'tool-1',
+      toolName: 'ls',
+      args: {},
+    })
+    const completed = applySessionEvent(withTool, {
+      type: 'tool_execution_end',
+      toolCallId: 'tool-1',
+      isError: false,
+      result: { content: [null, { type: 'text', text: 'src' }] },
+    })
+
+    expect(completed[0]).toMatchObject({
+      role: 'assistant',
+      toolCards: [{ toolCallId: 'tool-1', output: 'src', streaming: false }],
+    })
+  })
 })

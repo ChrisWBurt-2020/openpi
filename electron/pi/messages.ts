@@ -4,10 +4,12 @@ import type { OutputLine, SessionReady } from '../../src/lib/ipc'
 import { IPC } from '../../src/lib/ipc'
 import type * as GitHost from '../git/gitHost'
 import { captureAgentReviewEvent, setAgentReviewWindow } from '../services/agentReview'
+import { recordDiagnostic } from '../services/diagnostics'
 import type {
   showSystemNotification as notifySystem,
   playSoundEffect as playSound,
 } from '../services/notificationHost'
+import type { RunControlEvent } from './runExtension'
 import { SessionEpochGate } from './sessionEpoch'
 import type { SidecarMessage } from './sidecar'
 import { isStaleExtensionCtxEvent } from './staleCtx'
@@ -25,6 +27,9 @@ interface SidecarMessageDeps {
   getGitHost: () => Promise<typeof GitHost>
   emitSessionError: (message: string, code?: string) => void
   emitOutputLine: (line: OutputLine) => void
+  onRunEvent?: (threadId: string, event: Record<string, unknown>) => void
+  onRunControl?: (threadId: string, event: RunControlEvent) => void
+  onRunWorkerLost?: (threadId: string, reason: string) => void
   /** Injectable for tests; defaults to a fresh gate per handler. */
   epochGate?: SessionEpochGate
 }
@@ -35,6 +40,14 @@ interface SessionEventShape {
   finalError?: string
   errorMessage?: string
   message?: string
+}
+
+function validSessionEvent(value: unknown): value is Record<string, unknown> & SessionEventShape {
+  return (
+    Boolean(value) &&
+    typeof value === 'object' &&
+    typeof (value as { type?: unknown }).type === 'string'
+  )
 }
 
 export function createSidecarMessageHandler(deps: SidecarMessageDeps) {
@@ -82,9 +95,27 @@ export function createSidecarMessageHandler(deps: SidecarMessageDeps) {
         if (!epochs.accepts(msg.epoch)) return
         if (isStaleExtensionCtxEvent(msg.event)) return
 
-        const event = msg.event as SessionEventShape
+        if (!validSessionEvent(msg.event)) {
+          recordDiagnostic({
+            level: 'error',
+            area: 'sidecar',
+            action: 'invalid_session_event',
+            message: 'Dropped malformed Pi session event before renderer projection.',
+            data: { threadId, epoch: msg.epoch, eventKind: typeof msg.event },
+          })
+          return
+        }
+        const event = msg.event
+        recordDiagnostic({
+          level: 'debug',
+          area: 'sidecar',
+          action: 'session_event',
+          message: event.type ?? 'unknown event',
+          data: { threadId, epoch: msg.epoch, eventType: event.type ?? null },
+        })
+        deps.onRunEvent?.(threadId, event)
         const window = deps.getMainWindow()
-        window?.webContents.send(IPC.SESSION_EVENT, { threadId, event: msg.event })
+        window?.webContents.send(IPC.SESSION_EVENT, { threadId, event })
 
         // Background streams reach the renderer, but foreground-only services
         // must remain owned by the thread the user is currently viewing.
@@ -93,10 +124,10 @@ export function createSidecarMessageHandler(deps: SidecarMessageDeps) {
         setAgentReviewWindow(window)
         if (event.type === 'tool_execution_start' || event.type === 'tool_execution_end') {
           const cwd = deps.resolveThreadCwd?.(threadId) ?? deps.resolveActiveCwd()
-          captureAgentReviewEvent(cwd, msg.event as Record<string, unknown>)
+          captureAgentReviewEvent(cwd, event)
         }
 
-        if (event.type === 'agent_end') {
+        if (event.type === 'agent_settled') {
           setTimeout(() => {
             void deps.refreshSessionIndex()
           }, 0)
@@ -151,7 +182,18 @@ export function createSidecarMessageHandler(deps: SidecarMessageDeps) {
         return
       }
 
+      case 'run_control':
+        deps.onRunControl?.(threadId, msg.event)
+        return
+
       case 'session_error':
+        recordDiagnostic({
+          level: 'error',
+          area: 'sidecar',
+          action: 'session_error',
+          message: msg.message,
+          data: { threadId, code: msg.code ?? null },
+        })
         deps.getMainWindow()?.webContents.send(IPC.SESSION_ERROR, {
           threadId,
           error: { message: msg.message, ...(msg.code ? { code: msg.code } : {}) },
@@ -159,6 +201,9 @@ export function createSidecarMessageHandler(deps: SidecarMessageDeps) {
         if (isForeground) {
           deps.showSystemNotification('notifyErrors', 'OpenPi error', msg.message)
           deps.playSoundEffect('soundErrors')
+        }
+        if (msg.code === 'remote_pi_disconnected' || msg.code === 'pi_sidecar_crashed') {
+          deps.onRunWorkerLost?.(threadId, msg.code)
         }
         return
 
@@ -187,6 +232,13 @@ export function createSidecarMessageHandler(deps: SidecarMessageDeps) {
         return
 
       case 'error':
+        recordDiagnostic({
+          level: 'error',
+          area: 'sidecar',
+          action: 'command_error',
+          message: msg.message,
+          data: { threadId },
+        })
         deps.getMainWindow()?.webContents.send(IPC.SESSION_ERROR, {
           threadId,
           error: { message: msg.message },

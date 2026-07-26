@@ -95,7 +95,13 @@ export function applySessionEvent(
     }
 
     case 'message_end': {
-      const msg = event.message as { role: string; timestamp?: number; usage?: UsageLike }
+      const msg = event.message as {
+        role: string
+        timestamp?: number
+        usage?: UsageLike
+        stopReason?: string
+        errorMessage?: string
+      }
       const last = messages.at(-1)
       if (last?.role !== 'assistant') return messages
       const durationMs = durationFrom(currentTurnStartMs, msg.timestamp)
@@ -103,6 +109,15 @@ export function applySessionEvent(
       next[next.length - 1] = {
         ...last,
         streaming: false,
+        ...(msg.stopReason === 'error'
+          ? {
+              text:
+                msg.errorMessage ??
+                (last.text || 'The selected model could not complete this request.'),
+              errorMessage:
+                msg.errorMessage ?? 'The selected model could not complete this request.',
+            }
+          : {}),
         ...(msg.usage ? usageToMessageMetrics(msg.usage) : {}),
         ...(durationMs ? { durationMs } : {}),
       } as Message
@@ -294,15 +309,21 @@ function contentToText(content: unknown): string {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return ''
   return content
-    .filter((part: unknown) => (part as { type?: string }).type === 'text')
+    .filter(
+      (part: unknown): part is { type: string; text?: string } =>
+        Boolean(part) && typeof part === 'object' && (part as { type?: unknown }).type === 'text'
+    )
     .map((part: unknown) => (part as { text?: string }).text ?? '')
     .join('')
 }
 
 function resultText(result: unknown): string {
   return (
-    (result as { content?: Array<{ type: string; text?: string }> } | undefined)?.content
-      ?.filter((part) => part.type === 'text')
+    (result as { content?: Array<{ type: string; text?: string } | null> } | undefined)?.content
+      ?.filter(
+        (part): part is { type: string; text?: string } =>
+          part !== null && typeof part === 'object' && part.type === 'text'
+      )
       .map((part) => part.text ?? '')
       .join('') ?? ''
   )

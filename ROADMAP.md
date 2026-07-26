@@ -52,6 +52,7 @@ Done so far:
 **Phase 6 (trust & policy):** ✅ slices 1–9 shipped (workspace trust, provenance, extension/package gates, protected paths, high-risk mutation confirms, secrets/redaction, diagnostics export, SQLite hardening). **Blocker:** release signing/notarization (slice 10) — needs org secrets, not code.
 
 Still beta-blocking:
+- **Workspace stabilization gate:** local non-Git and Git folders, SSH Workspace transport, sidecar event compatibility, Stop Agent, and provider-error presentation must pass local and SSH smoke tests before further Run orchestration or remote-workbench expansion.
 - macOS notarization and Windows code signing not configured (see Phase 6 slice 10).
 - Phase 7 automated test coverage gaps (`npm test`) before broad beta.
 - CI lint/test must stay green.

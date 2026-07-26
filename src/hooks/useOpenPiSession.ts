@@ -21,6 +21,7 @@ import type {
   SessionListItem,
   WorkspaceSummaryInfo,
 } from '../lib/ipc'
+import type { ComposerIntent } from '../lib/runs'
 import { buildSessionPromptPayload, buildSessionPromptText } from '../lib/sessionPrompt'
 import { isSubSessionPath } from '../lib/subSessionNavigation'
 import {
@@ -69,6 +70,7 @@ export function useOpenPiSession() {
   const [activeThreadId, setActiveThreadId] = createSignal<string | null>(null)
   const [snapshotRevision, setSnapshotRevision] = createSignal(0)
   const [transportError, setTransportError] = createSignal<string | null>(null)
+  const [composerIntent, setComposerIntent] = createSignal<ComposerIntent>('ask')
   const selectedSnapshot = createMemo(() => {
     snapshotRevision()
     const threadId = activeThreadId()
@@ -367,6 +369,7 @@ export function useOpenPiSession() {
         batch(() => {
           commitSnapshot(threadId, readyResult.snapshot)
           setActiveThreadId(threadId)
+          setComposerIntent('ask')
           setTransportError(null)
           sessionIndex.setSelectedWorkspacePath(payload.cwd)
           // Clear extension trackers on new session
@@ -503,7 +506,10 @@ export function useOpenPiSession() {
   }
 
   const send = async (contextPrefix?: string) => {
-    const promptPayload = buildSessionPromptPayload(input(), contextPrefix)
+    const rawInput = input()
+    const runMatch = rawInput.match(/^\/run\s+([\s\S]+)/i)
+    const intent = runMatch ? 'run' : composerIntent()
+    const promptPayload = buildSessionPromptPayload(runMatch?.[1] ?? rawInput, contextPrefix)
     const r = ready()
     const threadId = activeThreadId()
     if (!promptPayload.text || !r || !threadId) return
@@ -518,7 +524,15 @@ export function useOpenPiSession() {
         await window.openpi.followUp(promptPayload.text, promptPayload.contextPrefix)
       else {
         updateThread(threadId, (snapshot) => ({ ...snapshot, awaitingPromptStart: true }))
-        await window.openpi.prompt(promptPayload.text, promptPayload.contextPrefix)
+        const result = await window.openpi.prompt(
+          promptPayload.text,
+          promptPayload.contextPrefix,
+          intent
+        )
+        if (!result.accepted) {
+          setComposerIntent('ask')
+          throw new Error(result.message)
+        }
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -797,6 +811,9 @@ export function useOpenPiSession() {
     get thinkingLevel() {
       return thinkingLevel()
     },
+    get composerIntent() {
+      return composerIntent()
+    },
     get hasMoreHistoryBefore() {
       return selectedSnapshot()?.hasMoreHistoryBefore ?? false
     },
@@ -874,6 +891,7 @@ export function useOpenPiSession() {
     setInput,
     setError,
     setQueueMode,
+    setComposerIntent,
     setSessionQuery: sessionIndex.setSessionQuery,
     setSortBy: sessionIndex.setSortBy,
     setGroupBy: sessionIndex.setGroupBy,

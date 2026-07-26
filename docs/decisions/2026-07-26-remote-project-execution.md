@@ -25,3 +25,9 @@ Remote Pi runs through strict LF-delimited RPC mode. The remote runner helper is
 Remote and local workers share the existing three-live-thread pool and the non-eviction rule for running work. An SSH Workspace loses only its remote tool transport on disconnect; its local Pi session and JSONL remain available. A Persistent Remote Runner detaches on desktop shutdown and reconnects through its runner supervisor; the UI only reports a run as alive after the supervisor confirms it.
 
 SSH Workspace tool routing currently covers Pi's read, write, edit, list, find, and bash operations over the main-owned connection. Workbench file, Git, terminal, and session-index surfaces are being routed through the same backend and must never fall back to local filesystem authority.
+
+## Stabilization boundaries
+
+SSH Workspace requests are validated at both the sidecar and Electron-main boundary. They use bounded metadata/file deadlines, a reusable SFTP channel for each live SSH profile, and a fixed remote shell bootstrap whose workspace path and command arrive through stdin rather than SSH environment requests. Connection loss, sidecar replacement, and Stop Agent reject all pending transport requests; no request may remain indefinitely open.
+
+Only a narrow, read-only local resource allowlist is available to the local Pi sidecar for its own user-installed Pi/OpenPi skills and prompts. It exists so resource loading can read exact local guidance such as a `SKILL.md`. Workspace reads and every mutation remain remote-only for an SSH Workspace; a Windows file is never used as a fallback for a remote project path.

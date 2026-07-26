@@ -1,3 +1,6 @@
+import fs from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 import {
   createBashTool,
   createEditTool,
@@ -13,6 +16,7 @@ import type {
   WorkspaceResult,
   WorkspaceStream,
 } from '../remote/workspaceProtocol'
+import { workspaceResultSchema, workspaceStreamSchema } from '../remote/workspaceProtocol'
 
 interface TransportClient {
   request(request: Omit<WorkspaceRequest, 'type' | 'requestId'>): Promise<unknown>
@@ -26,6 +30,18 @@ function text(value: unknown): string {
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+}
+
+function isApprovedLocalResource(filePath: string): boolean {
+  if (!path.isAbsolute(filePath)) return false
+  const resolved = path.resolve(filePath)
+  const home = os.homedir()
+  const roots = [
+    path.join(home, '.pi', 'agent', 'skills'),
+    path.join(home, '.pi', 'agent', 'prompts'),
+    path.join(home, '.codex', 'skills'),
+  ]
+  return roots.some((root) => resolved === root || resolved.startsWith(`${root}${path.sep}`))
 }
 
 /**
@@ -48,9 +64,12 @@ export function createWorkspaceExtension(
 
     const cwd = (): string => workspace().virtualCwd
     const readOps = () => ({
-      readFile: async (filePath: string) =>
-        Buffer.from(text(await transport.request({ operation: 'read', path: filePath }))),
+      readFile: async (filePath: string) => {
+        if (isApprovedLocalResource(filePath)) return fs.readFile(filePath)
+        return Buffer.from(text(await transport.request({ operation: 'read', path: filePath })))
+      },
       access: async (filePath: string) => {
+        if (isApprovedLocalResource(filePath)) return fs.access(filePath)
         await transport.request({ operation: 'access', path: filePath })
       },
     })
@@ -173,7 +192,7 @@ export function createWorkspaceExtension(
 export class WorkspaceTransportClient {
   private readonly pending = new Map<
     string,
-    { resolve: (value: unknown) => void; reject: (error: Error) => void }
+    { resolve: (value: unknown) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout }
   >()
   private readonly listeners = new Set<(message: WorkspaceStream) => void>()
   private serial = 0
@@ -183,7 +202,17 @@ export class WorkspaceTransportClient {
   request(request: Omit<WorkspaceRequest, 'type' | 'requestId'>): Promise<unknown> {
     const requestId = `workspace-${++this.serial}`
     return new Promise((resolve, reject) => {
-      this.pending.set(requestId, { resolve, reject })
+      const timeoutMs =
+        request.operation === 'bash' && typeof request.timeout === 'number'
+          ? (request.timeout + 5) * 1_000
+          : 15_000
+      const timeout = setTimeout(() => {
+        this.pending.delete(requestId)
+        reject(
+          new Error(`SSH workspace ${request.operation} timed out after ${timeoutMs / 1_000}s`)
+        )
+      }, timeoutMs)
+      this.pending.set(requestId, { resolve, reject, timeout })
       this.send({ ...request, type: 'workspace_request', requestId })
     })
   }
@@ -193,14 +222,26 @@ export class WorkspaceTransportClient {
   }
 
   receive(message: WorkspaceResult | WorkspaceStream): void {
-    if (message.type === 'workspace_stream') {
-      for (const listener of this.listeners) listener(message)
+    const stream = workspaceStreamSchema.safeParse(message)
+    if (stream.success) {
+      for (const listener of this.listeners) listener(stream.data)
       return
     }
-    const pending = this.pending.get(message.requestId)
+    const result = workspaceResultSchema.safeParse(message)
+    if (!result.success) return
+    const pending = this.pending.get(result.data.requestId)
     if (!pending) return
-    this.pending.delete(message.requestId)
-    if (message.ok) pending.resolve(message.data)
-    else pending.reject(new Error(message.error ?? 'Remote workspace operation failed'))
+    this.pending.delete(result.data.requestId)
+    clearTimeout(pending.timeout)
+    if (result.data.ok) pending.resolve(result.data.data)
+    else pending.reject(new Error(result.data.error))
+  }
+
+  rejectAll(reason: string): void {
+    for (const [requestId, pending] of this.pending) {
+      clearTimeout(pending.timeout)
+      pending.reject(new Error(reason))
+      this.pending.delete(requestId)
+    }
   }
 }

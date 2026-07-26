@@ -5253,6 +5253,30 @@ body.panel-dragging {
   align-items: center;
 }
 
+.composer-intent {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+}
+
+.composer-intent button {
+  border: 0;
+  border-radius: calc(var(--r-sm) - 2px);
+  background: transparent;
+  color: var(--ash);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 20px;
+  padding: 0 7px;
+}
+
+.composer-intent button.active {
+  background: var(--accent-fill, color-mix(in srgb, var(--accent) 18%, transparent));
+  color: var(--text);
+}
+
 /* Inline picker trigger button */
 .composer-tool-btn {
   display: inline-flex;

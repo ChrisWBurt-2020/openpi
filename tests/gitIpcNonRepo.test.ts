@@ -74,8 +74,10 @@ async function call(channel: string, ...args: unknown[]): Promise<unknown> {
 }
 
 describe('git reads in a folder that is not a repository', () => {
-  it('MUST NOT reject GIT_FILE_TREE — the exact reported failure', async () => {
-    await expect(call(IPC.GIT_FILE_TREE, tmp)).resolves.toBeNull()
+  it('returns the filesystem tree even when Git metadata is unavailable', async () => {
+    await expect(call(IPC.GIT_FILE_TREE, tmp)).resolves.toMatchObject({
+      children: [{ name: 'notes.txt', isDir: false }],
+    })
   })
 
   it('does not reject the other panel reads either', async () => {

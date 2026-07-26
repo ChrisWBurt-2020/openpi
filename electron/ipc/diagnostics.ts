@@ -4,6 +4,7 @@ import type { z } from 'zod'
 import { diagnosticsBundleSchema, IPC } from '../../src/lib/ipc'
 import type * as GitHost from '../git/gitHost'
 import type * as CustomizationsHost from '../services/customizations'
+import { latestDiagnosticError, recentDiagnostics } from '../services/diagnostics'
 import { redactObject } from '../services/secretRedact'
 import { getAgentDir, getAppInfo, safeFileStats } from '../services/shellEnv'
 import type { SessionState } from '../session/sessionHost'
@@ -17,6 +18,8 @@ interface DiagnosticsIpcDeps {
   getCustomizationsHost: () => Promise<typeof CustomizationsHost>
   getGitHost: () => Promise<typeof GitHost>
   getPiSidecarHost: () => unknown | null
+  getWorkerDiagnostics?: () => Record<string, unknown>
+  getRuns?: () => Record<string, unknown>[]
 }
 
 function redactDiagnosticPaths<T>(value: T, workspacePath?: string | null): T {
@@ -91,6 +94,10 @@ async function buildDiagnosticsBundle(
       hostCreated: deps.getPiSidecarHost() !== null,
       activeSession: sessionState !== null,
     },
+    workers: deps.getWorkerDiagnostics?.(),
+    runs: deps.getRuns?.(),
+    recentEvents: recentDiagnostics(),
+    lastFatal: latestDiagnosticError(),
     resources,
     git,
     database: {

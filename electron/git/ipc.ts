@@ -40,6 +40,8 @@ import {
   searchFileContentsRequestSchema,
 } from '../../src/lib/ipc'
 import type * as GitHost from '../git/gitHost'
+import type { RemoteConnectionManager } from '../remote/connectionManager'
+import { getRemoteFileTree, parseRemoteWorkspace } from '../remote/fileTree'
 import type { filterBlockedPaths as filterProtectedPaths } from '../services/protectedPaths'
 import { enrichTree } from './gitFileTree'
 
@@ -58,6 +60,7 @@ interface GitIpcDeps {
   filterBlockedPaths: typeof filterProtectedPaths
   confirmHighRiskMutation: (options: ConfirmMutationOptions) => Promise<boolean>
   getCommitAgentContext: () => Promise<string | undefined>
+  getRemoteConnections: () => RemoteConnectionManager | null
 }
 
 /** Same cwd resolution as GIT_PANEL_MOUNTED / git poll — avoids status stuck while poll runs. */
@@ -71,6 +74,10 @@ function requireCwd(deps: GitIpcDeps): string | null {
 
 function isRemoteWorkspace(cwd: string): boolean {
   return cwd.startsWith('ssh://')
+}
+
+function isNotRepositoryError(error: unknown): boolean {
+  return error instanceof Error && /not a git repository/i.test(error.message)
 }
 
 /**
@@ -163,8 +170,8 @@ function assertHunkTargetsFile(hunkPatch: string, filePath: string): void {
  * escape as a rejected IPC handler. The renderer sees an unhandled rejection
  * instead of an empty panel.
  *
- * Reads degrade to their empty value; the error is still logged so this never
- * hides a genuine failure. MUTATIONS are deliberately NOT wrapped: silently
+ * Reads degrade to their empty value. A non-Git folder is expected and remains
+ * quiet; other failures are logged. MUTATIONS are deliberately NOT wrapped: silently
  * swallowing a failed commit or checkout is far worse than a noisy one.
  */
 async function safeGitRead<T>(
@@ -177,7 +184,7 @@ async function safeGitRead<T>(
   try {
     return await run()
   } catch (err) {
-    console.error(`[openpi:git] ${label} failed for cwd`, cwd, err)
+    if (!isNotRepositoryError(err)) console.error(`[openpi:git] ${label} failed for cwd`, cwd, err)
     return fallback
   }
 }
@@ -204,7 +211,7 @@ export function registerGitIpc(deps: GitIpcDeps): void {
         console.log('[openpi:git] GIT_STATUS success, files=', result?.files?.length)
         return result
       } catch (err) {
-        console.error('[openpi:git-status] error for cwd', cwd, err)
+        if (!isNotRepositoryError(err)) console.error('[openpi:git-status] error for cwd', cwd, err)
         return null
       }
     }
@@ -403,17 +410,26 @@ export function registerGitIpc(deps: GitIpcDeps): void {
     async (_event, cwdFromRenderer?: string): Promise<FileTreeResult | null> => {
       const cwd = cwdFromRenderer ?? requireCwd(deps)
       if (!cwd) return null
-      return safeGitRead('GIT_FILE_TREE', cwd, null, async () => {
-        const git = await deps.getGitHost()
-        const tree = git.getFileTree(cwd)
-        // Enrich tree with git status so the renderer can show M/A/D/R badges
+      const remote = parseRemoteWorkspace(cwd)
+      if (remote) {
+        const manager = deps.getRemoteConnections()
+        if (!manager) return null
+        return fileTreeResultSchema.parse(await getRemoteFileTree(manager, remote))
+      }
+      const git = await deps.getGitHost()
+      // The filesystem tree is useful in any directory. Git is only optional
+      // decoration, so a non-repository must never erase an otherwise valid
+      // tree or turn an expected capability check into a renderer failure.
+      const tree = git.getFileTree(cwd)
+      try {
         const status = await git.getGitStatus(cwd)
         const statusMap = new Map<string, string>()
-        for (const file of status.files) {
-          statusMap.set(file.path, file.status)
-        }
+        for (const file of status.files) statusMap.set(file.path, file.status)
         return fileTreeResultSchema.parse(enrichTree(tree, statusMap))
-      })
+      } catch {
+        console.info(`[openpi:git] GIT_FILE_TREE no Git metadata for cwd=${cwd}`)
+        return fileTreeResultSchema.parse(tree)
+      }
     }
   )
 

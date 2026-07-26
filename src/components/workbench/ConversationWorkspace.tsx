@@ -327,6 +327,7 @@ export function ConversationWorkspace(props: ConversationWorkspaceProps) {
             isStreaming={props.session.isStreaming}
             isShellRunning={props.session.isShellRunning}
             queueMode={props.session.queueMode}
+            intent={props.session.composerIntent}
             workspaceName={props.workspaceName}
             promptHistory={props.promptHistory}
             steeringQueue={props.session.steeringQueue}
@@ -350,6 +351,7 @@ export function ConversationWorkspace(props: ConversationWorkspaceProps) {
             onManageModels={props.onManageModels}
             onInput={props.session.setInput}
             onQueueMode={props.session.setQueueMode}
+            onIntent={props.session.setComposerIntent}
             onSend={props.onSend}
             onShellSend={() => void props.session.sendShell()}
             onAbort={() => void window.openpi.abort()}

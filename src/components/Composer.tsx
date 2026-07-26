@@ -441,6 +441,28 @@ export const Composer: Component<ComposerProps> = (props) => {
 
             {/* Send / Stop */}
             <div class="composer-toolbar-right">
+              <Show when={!props.isStreaming && !shellMode()}>
+                <div class="composer-intent">
+                  <button
+                    type="button"
+                    classList={{ active: props.intent === 'ask' }}
+                    aria-pressed={props.intent === 'ask'}
+                    onClick={() => props.onIntent('ask')}
+                  >
+                    Ask
+                  </button>
+                  <button
+                    type="button"
+                    classList={{ active: props.intent === 'run' }}
+                    aria-pressed={props.intent === 'run'}
+                    onClick={() => props.onIntent('run')}
+                    title="Run until complete, with up to three automatic continuation turns"
+                  >
+                    Run
+                  </button>
+                </div>
+                <span class="composer-toolbar-divider" aria-hidden />
+              </Show>
               <Show when={props.isStreaming}>
                 <DeliveryMode queueMode={props.queueMode} onQueueMode={props.onQueueMode} />
                 <span class="composer-toolbar-divider" aria-hidden />

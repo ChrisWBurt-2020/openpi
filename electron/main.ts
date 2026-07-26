@@ -10,7 +10,10 @@ import { createSidecarMessageHandler } from './pi/messages'
 import type { SidecarCommand, SidecarMessage } from './pi/sidecar'
 import { checkPiUpdate } from './pi/updater'
 import { RemoteConnectionManager } from './remote/connectionManager'
+import { RunManager } from './runs/manager'
+import { RunStore } from './runs/store'
 import { startArtifactWatcher } from './services/artifactWatcher'
+import { recordDiagnosticError } from './services/diagnostics'
 import { handleLocalFileProtocol, registerLocalFileScheme } from './services/localFileProtocol'
 import {
   ensureFffInitialized,
@@ -47,6 +50,7 @@ import {
   refreshSessionIndex,
   resolveActiveCwd,
   resolveThreadCwd,
+  sendToThread,
   setOnMaybeCheckPiUpdate,
   setOnOutputLine,
   setOnRestartGitMonitoring,
@@ -100,6 +104,7 @@ async function confirmHighRiskMutation(options: {
 let mainWindow: BrowserWindow | null = null
 let sessionIndex: SessionIndexStore | null = null
 let remoteConnections: RemoteConnectionManager | null = null
+let runManager: RunManager | null = null
 
 // ── Output ring buffer ─────────────────────────────────────────────────
 // Lines emitted before the Output pane opens are held here so they are
@@ -116,6 +121,7 @@ function emitOutputLine(line: OutputLine): void {
 // Capture main-process crashes and forward them to the Output pane,
 // then exit so Electron doesn't run in a corrupted state.
 process.on('uncaughtException', (err: Error) => {
+  recordDiagnosticError('main', 'uncaught_exception', err)
   const text = `[crash] ${err.message}${err.stack ? `\n${err.stack}` : ''}`
   process.stderr.write(`[main] uncaughtException: ${err.stack ?? err.message}\n`)
   emitOutputLine({ level: 'error', text, ts: Date.now() })
@@ -123,6 +129,7 @@ process.on('uncaughtException', (err: Error) => {
   setImmediate(() => app.exit(1))
 })
 process.on('unhandledRejection', (reason: unknown) => {
+  recordDiagnosticError('main', 'unhandled_rejection', reason)
   const text =
     reason instanceof Error
       ? `[rejection] ${reason.message}${reason.stack ? `\n${reason.stack}` : ''}`
@@ -172,6 +179,9 @@ const handleSidecarMessage = createSidecarMessageHandler({
   getGitHost,
   emitSessionError,
   emitOutputLine,
+  onRunEvent: (threadId, event) => runManager?.onEvent(threadId, event),
+  onRunControl: (threadId, event) => runManager?.onControl(threadId, event),
+  onRunWorkerLost: (threadId, reason) => runManager?.onWorkerLost(threadId, reason),
 })
 
 // ─── IPC handlers ──────────────────────────────────────────────────────────────
@@ -199,6 +209,7 @@ function registerHandlers(): void {
     sendSidecar: (message: SidecarCommand) => {
       getPiSidecarHost()?.send(message)
     },
+    getRunManager: () => runManager,
   })
 }
 
@@ -233,6 +244,11 @@ app.whenReady().then(() => {
 
   sessionIndex = new SessionIndexStore(path.join(app.getPath('userData'), 'openpi.sqlite'))
   remoteConnections = new RemoteConnectionManager(sessionIndex)
+  const runStore = new RunStore(path.join(app.getPath('userData'), 'openpi-runs.sqlite'))
+  runStore.releaseRestartedRuns()
+  runManager = new RunManager(runStore, sendToThread, (state) =>
+    mainWindow?.webContents.send(IPC.RUN_CHANGED, state)
+  )
   setSessionIndex(sessionIndex)
   setSessionHostSessionIndex(sessionIndex)
   setSessionHostRemoteConnections(remoteConnections)

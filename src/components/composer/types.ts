@@ -3,6 +3,7 @@ import type { FileLineComment } from '../../lib/fileLineComments'
 import type { ModelInfo, SessionStats, SkillItem } from '../../lib/ipc'
 
 export type QueueMode = 'prompt' | 'steer' | 'followup'
+export type ComposerIntent = 'ask' | 'run'
 
 export interface SlashCommand {
   name: string
@@ -15,6 +16,7 @@ export interface ComposerProps {
   isStreaming: boolean
   isShellRunning: boolean
   queueMode: QueueMode
+  intent: ComposerIntent
   workspaceName: string
   /** Most-recent-first list of user message texts for Up/Down history navigation */
   promptHistory: string[]
@@ -46,6 +48,7 @@ export interface ComposerProps {
   onManageModels: () => void
   onInput: (value: string) => void
   onQueueMode: (mode: QueueMode | ((mode: QueueMode) => QueueMode)) => void
+  onIntent: (intent: ComposerIntent) => void
   onSend: () => void
   onShellSend: () => void
   onAbort: () => void
