@@ -78,7 +78,7 @@ function assertHunkTargetsFile(hunkPatch: string, filePath: string): void {
   const normalizedExpected = filePath.replace(/^\.\//, '').trim()
   const lines = hunkPatch.split(/\r?\n/)
   let sawNewPath = false
-  let sawOldPath = false
+  let _sawOldPath = false
   for (const line of lines) {
     if (line.startsWith('diff --git ')) {
       // Once we hit a new diff header, we only care about subsequent target lines
@@ -96,7 +96,7 @@ function assertHunkTargetsFile(hunkPatch: string, filePath: string): void {
           `Hunk patch rename source does not match requested file (expected ${normalizedExpected}, got ${src})`
         )
       }
-      sawOldPath = true
+      _sawOldPath = true
       continue
     }
     if (line.startsWith('rename to ')) {
@@ -113,7 +113,7 @@ function assertHunkTargetsFile(hunkPatch: string, filePath: string): void {
       const src = line.slice(4).trim()
       // Skip the /dev/null case
       if (src === '/dev/null') {
-        sawOldPath = true
+        _sawOldPath = true
         continue
       }
       if (src.startsWith('a/')) {
@@ -122,7 +122,7 @@ function assertHunkTargetsFile(hunkPatch: string, filePath: string): void {
             `Hunk patch source path does not match requested file (expected ${normalizedExpected}, got ${src.slice(2)})`
           )
         }
-        sawOldPath = true
+        _sawOldPath = true
       }
       continue
     }

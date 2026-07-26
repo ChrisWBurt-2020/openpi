@@ -1392,17 +1392,23 @@ input::placeholder {
 }
 
 .usage-daily-chart-bars {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
   display: flex;
   align-items: flex-end;
   gap: 3px;
   height: 160px;
-  padding: 0;
 }
 
 .usage-daily-chart-col {
   flex: 1;
   min-width: 0;
   height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
   display: flex;
   align-items: flex-end;
   cursor: pointer;
@@ -2276,6 +2282,16 @@ input::placeholder {
   cursor: pointer;
   text-align: left;
   transition: background 0.1s;
+}
+.homescreen-session-open {
+  min-width: 0;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 .homescreen-session:hover {
   background: var(--surface-soft);
@@ -3881,7 +3897,7 @@ body.panel-dragging {
   padding-right: 1.2em;
   min-width: 2.4em;
   color: var(--mute);
-  opacity: 0.6 !important;
+  opacity: 0.6;
   font-size: 0.9em;
   text-indent: 0;
 }
@@ -4276,9 +4292,9 @@ body.panel-dragging {
 }
 
 .progress-cell {
-  fill: var(--ink) !important;
-  opacity: 0.6 !important;
-  animation: session-progress-pulse 4.5s ease-in-out infinite !important;
+  fill: var(--ink);
+  opacity: 0.6;
+  animation: session-progress-pulse 4.5s ease-in-out infinite;
 }
 
 @property --progress-hi { syntax: "<number>"; inherits: false; initial-value: 1; }
@@ -8298,7 +8314,7 @@ body.panel-dragging {
 }
 
 .git-icon-btn:disabled {
-  opacity: 0.6 !important;
+  opacity: 0.6;
   cursor: not-allowed;
 }
 
@@ -9945,7 +9961,7 @@ body.panel-dragging {
   opacity: 0.9;
 }
 .hooks-panel-save-btn:disabled {
-  opacity: 0.6 !important;
+  opacity: 0.6;
   cursor: not-allowed;
 }
 
@@ -9962,7 +9978,7 @@ body.panel-dragging {
   background: var(--surface-soft);
 }
 .hooks-panel-cancel-btn:disabled {
-  opacity: 0.6 !important;
+  opacity: 0.6;
   cursor: not-allowed;
 }
 
@@ -10052,6 +10068,10 @@ body.panel-dragging {
 }
 
 .diff-actions {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -10059,6 +10079,8 @@ body.panel-dragging {
 }
 
 .diff-style-toggle {
+  min-inline-size: 0;
+  margin: 0;
   display: flex;
   align-items: center;
   padding: 1px;
@@ -10191,7 +10213,7 @@ body.panel-dragging {
  * full color when hovering the tree pane OR when the file is changed. */
 .ftree-item img {
   filter: grayscale(1);
-  opacity: 0.6 !important;
+  opacity: 0.6;
   transition:
     filter 0.15s ease,
     opacity 0.15s ease;
@@ -12477,7 +12499,7 @@ body.panel-dragging {
   color: var(--ink-soft);
 }
 .cp-sub-signin-btn:disabled {
-  opacity: 0.6 !important;
+  opacity: 0.6;
   cursor: not-allowed;
 }
 .cp-sub-signin-btn.is-loading {
@@ -13858,7 +13880,7 @@ body.panel-dragging {
   color: #e07030;
 }
 .pkg-confirm-btn:disabled {
-  opacity: 0.6 !important;
+  opacity: 0.6;
   cursor: not-allowed;
 }
 
@@ -16519,7 +16541,7 @@ body.panel-dragging {
 }
 
 .review-line-annotation-btn.is-primary:disabled {
-  opacity: 0.6 !important;
+  opacity: 0.6;
   cursor: not-allowed;
 }
 
@@ -16550,7 +16572,7 @@ body.panel-dragging {
   background: var(--hover);
 }
 .diff-scope-trigger:disabled {
-  opacity: 0.6 !important;
+  opacity: 0.6;
   cursor: not-allowed;
 }
 
@@ -16793,15 +16815,15 @@ body.panel-dragging {
   transition: color 120ms ease;
 }
 
-.tool-row.task-tool[role="button"] {
+.tool-row.task-tool:not(:disabled) {
   cursor: pointer;
 }
 
-.tool-row.task-tool[role="button"]:hover {
+.tool-row.task-tool:not(:disabled):hover {
   color: var(--ink);
 }
 
-.tool-row.task-tool[role="button"]:hover .tool-chevron {
+.tool-row.task-tool:not(:disabled):hover .tool-chevron {
   opacity: 1;
   transform: translateX(1px);
 }
@@ -16895,8 +16917,16 @@ body.panel-dragging {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+.confirm-dialog-dismiss {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
 
 .confirm-dialog {
+  position: relative;
   width: 100%;
   max-width: 420px;
   background: var(--bg-elevated, var(--surface, #1a1a1a));

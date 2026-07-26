@@ -13,19 +13,18 @@ type Props = {
 export function ConfirmDialog(props: Props) {
   return (
     <Show when={props.open}>
-      <div
-        class="confirm-dialog-backdrop"
-        role="presentation"
-        onClick={(e) => {
-          if (e.target === e.currentTarget) props.onCancel()
-        }}
-      >
+      <div class="confirm-dialog-backdrop">
+        <button
+          type="button"
+          class="confirm-dialog-dismiss"
+          aria-label="Cancel confirmation"
+          onClick={props.onCancel}
+        />
         <div
           class="confirm-dialog"
           role="alertdialog"
           aria-modal="true"
           aria-labelledby="confirm-dialog-title"
-          onClick={(e) => e.stopPropagation()}
         >
           <div class="confirm-dialog-header">
             <span id="confirm-dialog-title" class="confirm-dialog-title">

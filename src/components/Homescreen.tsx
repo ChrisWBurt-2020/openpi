@@ -160,28 +160,29 @@ export function Homescreen(props: Props) {
                           const isActive = session.path === props.activeSessionPath
                           const _wsName = session.cwd.split('/').pop() ?? ''
                           return (
-                            <div
-                              role="button"
-                              tabindex="0"
-                              class={`homescreen-session${isActive ? ' is-active' : ''}`}
-                              onClick={() => {
-                                if (!isActive) props.onSelectSession(session.path)
-                                props.onClose()
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault()
+                            <div class={`homescreen-session${isActive ? ' is-active' : ''}`}>
+                              <button
+                                type="button"
+                                class="homescreen-session-open"
+                                onClick={() => {
                                   if (!isActive) props.onSelectSession(session.path)
                                   props.onClose()
-                                } else if (e.key === 'Delete' || e.key === 'Backspace') {
-                                  e.preventDefault()
-                                  props.onDeleteSession(session.path)
-                                }
-                              }}
-                            >
-                              <span class="homescreen-session-title">
-                                {session.title || 'Untitled session'}
-                              </span>
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault()
+                                    if (!isActive) props.onSelectSession(session.path)
+                                    props.onClose()
+                                  } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                                    e.preventDefault()
+                                    props.onDeleteSession(session.path)
+                                  }
+                                }}
+                              >
+                                <span class="homescreen-session-title">
+                                  {session.title || 'Untitled session'}
+                                </span>
+                              </button>
                               <span class="homescreen-session-meta">
                                 <button
                                   type="button"

@@ -112,12 +112,6 @@ export function DailyModelChart(props: Props) {
     props.onPinnedModelChange?.(nextModel)
   }
 
-  const handleSegmentEnter = (mk: string) => {
-    if (isTouch()) return
-    setHoveredModel(mk)
-    props.onPinnedModelChange?.(mk)
-  }
-
   const handleLeave = () => {
     setHoveredColIdx(null)
     setHoveredModel(null)
@@ -182,18 +176,12 @@ export function DailyModelChart(props: Props) {
         </Show>
 
         {/* Bars */}
-        <div
-          class="usage-daily-chart-bars"
-          role="img"
-          aria-label="Daily token usage stacked by model"
-        >
+        <fieldset class="usage-daily-chart-bars" aria-label="Daily token usage stacked by model">
           <For each={columns()}>
             {(col, i) => (
-              <div
+              <button
+                type="button"
                 class={`usage-daily-chart-col${hoveredColIdx() === i() ? ' is-hovered' : ''}`}
-                role="button"
-                tabIndex={-1}
-                onKeyDown={() => {}}
                 onMouseMove={(e) => handleBarMouseMove(i(), e)}
                 onMouseLeave={() => setHoveredModel(null)}
                 onClick={(e) => e.stopPropagation()}
@@ -205,9 +193,6 @@ export function DailyModelChart(props: Props) {
                         class={`usage-daily-chart-seg${
                           activeModelKey() && activeModelKey() !== seg.modelKey ? ' is-dimmed' : ''
                         }${activeModelKey() === seg.modelKey ? ' is-pinned' : ''}`}
-                        role="button"
-                        tabIndex={-1}
-                        onKeyDown={() => {}}
                         style={{
                           height: `${Math.max(seg.share * 100, seg.share > 0 ? 1.5 : 0)}%`,
                           background:
@@ -215,15 +200,14 @@ export function DailyModelChart(props: Props) {
                               ? 'var(--surface-card)'
                               : colorFor(seg.modelKey),
                         }}
-                        onMouseEnter={() => handleSegmentEnter(seg.modelKey)}
                       />
                     )}
                   </For>
                 </div>
-              </div>
+              </button>
             )}
           </For>
-        </div>
+        </fieldset>
 
         {/* X-axis */}
         <div class="usage-daily-chart-axis">
