@@ -2,6 +2,7 @@ import type { ClientChannel } from 'ssh2'
 import type { SidecarCommand, SidecarMessage } from '../pi/sidecar'
 import type { PiWorkerHost } from '../pi/workerHost'
 import type { RemoteConnectionManager } from './connectionManager'
+import { remoteRunControl } from './runControl'
 
 interface PendingRequest {
   resolve: (response: RpcResponse) => void
@@ -163,7 +164,12 @@ export class RemotePiRpcHost implements PiWorkerHost {
       try {
         const message = JSON.parse(text) as RpcResponse | Record<string, unknown>
         if (message.type === 'response') this.handleResponse(message as RpcResponse)
-        else this.options.onMessage({ type: 'session_event', event: asRecord(message) })
+        else {
+          const event = asRecord(message)
+          const control = remoteRunControl(event)
+          if (control) this.options.onMessage({ type: 'run_control', event: control })
+          this.options.onMessage({ type: 'session_event', event })
+        }
       } catch {
         this.options.onMessage({
           type: 'output_append',
@@ -213,7 +219,28 @@ export class RemotePiRpcHost implements PiWorkerHost {
     if (command.type === 'stop') return void (await this.stop())
     if (command.type === 'start_session') return
     const requestId = `remote-${++this.serial}`
+    if (command.type === 'prompt' && command.intent === 'run' && command.runContext) {
+      await this.call(
+        { type: 'prompt', message: runContextCommand(command.runContext) },
+        `${requestId}-run-context`,
+        60_000
+      )
+    }
     await this.call(this.toRpc(command), requestId, 60_000)
+    if (
+      command.type === 'prompt' &&
+      command.text === '/openpi-run-continue' &&
+      command.runContext?.continuationId
+    ) {
+      this.options.onMessage({
+        type: 'run_control',
+        event: {
+          type: 'continuation_ack',
+          context: command.runContext,
+          continuationId: command.runContext.continuationId,
+        },
+      })
+    }
   }
 
   private async startSession(
@@ -325,4 +352,13 @@ export class RemotePiRpcHost implements PiWorkerHost {
         return { type: 'session_event', event: { type: 'remote_response', data } }
     }
   }
+}
+
+function runContextCommand(context: {
+  id: string
+  epoch: number
+  contractVersion: number
+  continuationId?: string
+}): string {
+  return `/openpi-run-context ${Buffer.from(JSON.stringify(context)).toString('base64url')}`
 }

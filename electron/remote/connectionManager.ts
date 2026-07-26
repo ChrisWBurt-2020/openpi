@@ -12,7 +12,7 @@ import type {
 import { recordDiagnostic, recordDiagnosticError } from '../services/diagnostics'
 import type { SessionIndexStore } from '../session/sessionIndex'
 import { providerEnvironment, sshConfig } from './auth'
-import { RUNNER_CONNECTOR, RUNNER_DAEMON } from './runnerAssets'
+import { RUNNER_CONNECTOR, RUNNER_DAEMON, RUNNER_RUN_EXTENSION } from './runnerAssets'
 import type { ConnectionState } from './types'
 import { workspaceCandidate } from './workspacePath'
 import type { WorkspaceRequest } from './workspaceProtocol'
@@ -405,7 +405,7 @@ export class RemoteConnectionManager {
       ).catch(() => ''),
       this.exec(
         client,
-        'test -r "$HOME/.openpi/runtime/0.82.1/runnerd.mjs" && test -r "$HOME/.openpi/runtime/0.82.1/runner-connect.mjs"'
+        'test -r "$HOME/.openpi/runtime/0.82.1/runnerd.mjs" && test -r "$HOME/.openpi/runtime/0.82.1/runner-connect.mjs" && test -r "$HOME/.openpi/runtime/0.82.1/openpi-run-continuity.mjs"'
       )
         .then(() => true)
         .catch(() => false),
@@ -436,9 +436,10 @@ export class RemoteConnectionManager {
     const client = await this.connect(id)
     const daemon = Buffer.from(RUNNER_DAEMON, 'utf8').toString('base64')
     const connector = Buffer.from(RUNNER_CONNECTOR, 'utf8').toString('base64')
+    const runExtension = Buffer.from(RUNNER_RUN_EXTENSION, 'utf8').toString('base64')
     await this.exec(
       client,
-      `if [ -s "$HOME/.nvm/nvm.sh" ]; then . "$HOME/.nvm/nvm.sh"; fi; mkdir -p "$HOME/.openpi/runtime/0.82.1" && npm install --prefix "$HOME/.openpi/runtime/0.82.1" @earendil-works/pi-coding-agent@0.82.1 && printf %s '${daemon}' | base64 -d > "$HOME/.openpi/runtime/0.82.1/runnerd.mjs" && printf %s '${connector}' | base64 -d > "$HOME/.openpi/runtime/0.82.1/runner-connect.mjs" && chmod 700 "$HOME/.openpi/runtime/0.82.1/runnerd.mjs" "$HOME/.openpi/runtime/0.82.1/runner-connect.mjs"`
+      `if [ -s "$HOME/.nvm/nvm.sh" ]; then . "$HOME/.nvm/nvm.sh"; fi; mkdir -p "$HOME/.openpi/runtime/0.82.1" && npm install --prefix "$HOME/.openpi/runtime/0.82.1" @earendil-works/pi-coding-agent@0.82.1 && printf %s '${daemon}' | base64 -d > "$HOME/.openpi/runtime/0.82.1/runnerd.mjs" && printf %s '${connector}' | base64 -d > "$HOME/.openpi/runtime/0.82.1/runner-connect.mjs" && printf %s '${runExtension}' | base64 -d > "$HOME/.openpi/runtime/0.82.1/openpi-run-continuity.mjs" && chmod 700 "$HOME/.openpi/runtime/0.82.1/runnerd.mjs" "$HOME/.openpi/runtime/0.82.1/runner-connect.mjs" "$HOME/.openpi/runtime/0.82.1/openpi-run-continuity.mjs"`
     )
   }
 

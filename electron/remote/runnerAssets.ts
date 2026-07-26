@@ -19,7 +19,8 @@ function send(socket, line) { if (!socket.destroyed) socket.write(line + '\n'); 
 function stop(runner) { runner.child.kill('TERM'); setTimeout(() => runner.child.kill('KILL'), 3000).unref(); }
 function spawnRunner(id, cwd, environment) {
   const pi = path.join(runtime, 'node_modules', '.bin', 'pi');
-  const child = spawn(pi, ['--mode', 'rpc', '--approve'], {
+  const extension = path.join(runtime, 'openpi-run-continuity.mjs');
+  const child = spawn(pi, ['--mode', 'rpc', '--approve', '-e', extension], {
     cwd,
     env: { ...process.env, ...environment },
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -96,4 +97,29 @@ const socket = net.connect(socketPath);
 socket.on('connect', () => { socket.write(attach + '\n'); process.stdin.pipe(socket); });
 socket.pipe(process.stdout);
 socket.on('error', () => process.exit(1));
+`
+
+/** Remote equivalent of the trusted local Run extension. It emits only
+ * structured tool details; Electron main remains the orchestration owner. */
+export const RUNNER_RUN_EXTENSION = String.raw`
+import { Type } from 'typebox';
+let context = null;
+const names = ['openpi_report_run_outcome', 'openpi_request_run_input', 'openpi_report_run_checkpoint'];
+const contextFrom = (args) => { try { const value = JSON.parse(Buffer.from(args, 'base64url').toString('utf8')); return value && typeof value.id === 'string' ? value : null; } catch { return null; } };
+const details = (type, payload) => ({ openpiRunControl: { type, context, payload } });
+export default function(pi) {
+  pi.registerCommand('openpi-run-context', { description: 'OpenPi internal Run context.', handler: async (args) => { context = contextFrom(args); } });
+  pi.registerCommand('openpi-run-continue', { description: 'OpenPi internal Run continuation.', handler: async () => {
+    if (!context) return;
+    pi.sendMessage({ customType: 'openpi-run-continuation', content: '[OpenPi Run continuation] Continue the active task. Reinspect current state, do not repeat completed work, and finish, block, or request input.', display: false, details: { continuationId: context.continuationId ?? null, runId: context.id } }, { deliverAs: 'followUp', triggerTurn: true });
+  } });
+  pi.on('before_agent_start', (event) => {
+    const active = pi.getActiveTools().filter((name) => !names.includes(name));
+    pi.setActiveTools(context ? [...active, ...names] : active);
+    return context ? { systemPrompt: event.systemPrompt + '\n\n## OpenPi Run contract\nGive a concise plan, then begin the first executable step in this same turn. Use openpi_report_run_outcome or openpi_request_run_input as the only tool call in their assistant batch.' } : undefined;
+  });
+  pi.registerTool({ name: 'openpi_report_run_outcome', label: 'Report Run Outcome', description: 'Report completed or blocked Run outcome.', parameters: Type.Object({ status: Type.Union([Type.Literal('completed'), Type.Literal('blocked')]), contractVersion: Type.Integer(), summary: Type.String(), verification: Type.Optional(Type.Array(Type.Object({ label: Type.String(), result: Type.String(), evidenceToolCallId: Type.Optional(Type.String()), notes: Type.Optional(Type.String()) }))), blockers: Type.Optional(Type.Array(Type.Object({ kind: Type.String(), message: Type.String(), suggestedAction: Type.Optional(Type.String()) }))), remainingWork: Type.Optional(Type.Array(Type.String())) }), async execute(_id, payload) { if (!context || payload.contractVersion !== context.contractVersion) return { content: [{ type: 'text', text: 'Run outcome rejected.' }], details: {}, terminate: true }; return { content: [{ type: 'text', text: 'Run outcome recorded.' }], details: details('outcome', payload), terminate: true }; } });
+  pi.registerTool({ name: 'openpi_request_run_input', label: 'Request Run Input', description: 'Request a necessary user decision.', parameters: Type.Object({ question: Type.String(), reason: Type.String(), options: Type.Optional(Type.Array(Type.Object({ id: Type.String(), label: Type.String(), description: Type.Optional(Type.String()) }))) }), async execute(_id, payload) { if (!context) return { content: [{ type: 'text', text: 'Run input rejected.' }], details: {}, terminate: true }; return { content: [{ type: 'text', text: 'Run waits for input.' }], details: details('input', payload), terminate: true }; } });
+  pi.registerTool({ name: 'openpi_report_run_checkpoint', label: 'Report Run Checkpoint', description: 'Report meaningful Run progress.', parameters: Type.Object({ phase: Type.String(), summary: Type.String(), completedSteps: Type.Optional(Type.Array(Type.String())), nextStep: Type.Optional(Type.String()), evidenceToolCallIds: Type.Optional(Type.Array(Type.String())) }), async execute(_id, payload) { if (!context) return { content: [{ type: 'text', text: 'Run checkpoint rejected.' }], details: {} }; return { content: [{ type: 'text', text: 'Run checkpoint recorded.' }], details: details('checkpoint', payload) }; } });
+}
 `
