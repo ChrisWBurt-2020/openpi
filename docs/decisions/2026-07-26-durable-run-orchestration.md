@@ -38,19 +38,21 @@ The repository currently has an experimental foundation:
 | Area | Present | Current limitation |
 | --- | --- | --- |
 | Ask / Run composer intent | Yes | Ask is the only verified smoke path. |
-| Durable materialized state and event log | Yes | The stored shape is a reduced Run state, not the full task-contract/evidence model. |
-| Checkout ownership | Yes | It has no queue or worktree-choice UX, and startup/loss reconciliation needs broader smoke coverage. |
-| `agent_settled` continuation decision | Yes | The continuation protocol has not completed acknowledgement and replay hardening. |
-| Run control tools | Yes | Outcome/input sibling-batch rejection and checkpoint rate limiting are not enforced end to end. |
+| Durable materialized state and event log | Yes | V2 records the contract, revision, active tools, evidence, outcome/input, and recovery state; migration pauses prior records. |
+| Checkout ownership | Yes | Leases release on unconfirmed worker loss and conflicting Runs can be durably queued; managed-worktree choice UI remains incomplete. |
+| `agent_settled` continuation decision | Yes | Scheduled continuations use stable IDs and local/runner control extensions acknowledge dispatch; replay/lease protocol hardening remains. |
+| Run control tools | Yes | Local and Persistent Runner tools validate structured outcomes, input, and checkpoints; sibling-batch rejection and checkpoint rate limiting are not enforced end to end. |
 | Pause / cancel IPC | Yes | It aborts the Pi turn, but remote process acknowledgement and a visible surviving-process state are incomplete. |
-| Ready-for-review state | Partial | It is inferred without authoritative changed-file/diff/test evidence or a review receipt. |
-| Renderer Run status | Partial | The composer toggle exists; durable cards, status interception, input answers, notifications, and review actions are absent. |
+| Ready-for-review state | Partial | Tool lifecycle now yields bounded changed-file/command/check evidence; backend Git/diff confirmation is still needed for authoritative receipts. |
+| Renderer Run status | Partial | The composer toggle, Run card, local status aliases, input answers, pause/end, and review actions exist; notification routing and conflict-choice UI remain incomplete. |
 
-In particular, `run_dispatches` records scheduled continuations, but the
-extension does not yet acknowledge a persisted continuation entry or deduplicate
-one after process recovery. The current recovery message is deliberately
-minimal; it does not yet include the required checkout, diff, checkpoints, and
-observed verification envelope.
+The Persistent Runner now installs the equivalent trusted control extension and
+Electron validates its structured tool details before changing a Run. Updating
+that helper stops the old user-owned daemon before it is next started, so users
+must treat the explicit runtime-upgrade approval as a runner interruption.
+
+The recovery message is still deliberately compact; it does not yet include the
+complete checkout, diff, checkpoints, and observed-verification envelope.
 
 ## Required stabilization before enabling Run as a product feature
 

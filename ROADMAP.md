@@ -53,6 +53,7 @@ Done so far:
 
 Still beta-blocking:
 - **Workspace stabilization gate:** local non-Git and Git folders, SSH Workspace transport, sidecar event compatibility, Stop Agent, and provider-error presentation must pass local and SSH smoke tests before further Run orchestration or remote-workbench expansion.
+- **Durable Run gate:** Run is experimental. Its V2 contract/event records, checkout leases/queue, `agent_settled` continuation decisions, and local/remote control extensions must pass restart, SSH cancellation, runner replay, and review-evidence smoke coverage before it becomes a supported background-work guarantee.
 - macOS notarization and Windows code signing not configured (see Phase 6 slice 10).
 - Phase 7 automated test coverage gaps (`npm test`) before broad beta.
 - CI lint/test must stay green.
