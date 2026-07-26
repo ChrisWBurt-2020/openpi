@@ -1,6 +1,7 @@
 import type { RunState } from '../../src/lib/runs'
 import type { RunControlEvent } from '../pi/runExtension'
 import type { SidecarCommand } from '../pi/sidecar'
+import { evidenceForEvent } from './evidence'
 import { checkoutIdentity } from './identity'
 import { progressFingerprint, reviseContract, transition } from './reducer'
 import { type CreateRunInput, createRunState, timestamp } from './state'
@@ -152,6 +153,7 @@ export class RunManager {
     if (!state || state.lifecycle === 'terminal') return
     const type = typeof event.type === 'string' ? event.type : ''
     let updated = transition(state, {})
+    updated.observedEvidence = evidenceForEvent(updated, event)
     if (type === 'agent_start') {
       updated = {
         ...updated,
