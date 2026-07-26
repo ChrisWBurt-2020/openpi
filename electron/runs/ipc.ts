@@ -2,6 +2,7 @@ import type { IpcMain } from 'electron'
 import { IPC } from '../../src/lib/ipc'
 import {
   runAnswerInputSchema,
+  runCheckoutConflictSchema,
   runIdSchema,
   runListSchema,
   runPauseSchema,
@@ -69,6 +70,14 @@ export function registerRunsIpc(deps: RunsIpcDeps): void {
     return requireManager(deps.getRunManager).requestChanges(
       request.runId,
       request.text,
+      request.expectedStateVersion
+    )
+  })
+  deps.ipcMain.handle(IPC.RUN_RESOLVE_CHECKOUT_CONFLICT, (_event, raw: unknown) => {
+    const request = runCheckoutConflictSchema.parse(raw)
+    return requireManager(deps.getRunManager).resolveCheckoutConflict(
+      request.runId,
+      request.strategy,
       request.expectedStateVersion
     )
   })

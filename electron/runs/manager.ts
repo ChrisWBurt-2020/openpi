@@ -1,4 +1,4 @@
-import type { RunState } from '../../src/lib/runs'
+import type { CheckoutStrategy, RunState } from '../../src/lib/runs'
 import type { RunControlEvent } from '../pi/runExtension'
 import type { SidecarCommand } from '../pi/sidecar'
 import { evidenceForEvent } from './evidence'
@@ -23,11 +23,20 @@ export class RunManager {
     private readonly publish: (state: RunState) => void
   ) {}
 
-  start(input: CreateRunInput): RunState {
+  start(input: CreateRunInput, strategy: CheckoutStrategy = 'cancel'): RunState {
     const checkoutId = checkoutIdentity(input.workspacePath)
     const existing = this.store.getByThread(input.threadId)
     if (existing && existing.lifecycle !== 'terminal') return existing
-    if (this.store.hasCheckoutOwner(checkoutId)) throw new CheckoutBusyError()
+    if (this.store.hasCheckoutOwner(checkoutId)) {
+      if (strategy !== 'queue') throw new CheckoutBusyError()
+      const queued = transition(createRunState(input), {
+        lifecycle: 'waiting',
+        phase: null,
+        waitingReason: 'checkout_busy',
+      })
+      this.save(queued, checkoutId, 'checkout_queued')
+      return queued
+    }
     const state = createRunState(input)
     this.save(state, checkoutId, 'started')
     return state
@@ -146,6 +155,19 @@ export class RunManager {
     const accepted = transition(state, { reviewState: 'accepted' })
     this.save(accepted, checkoutIdentity(accepted.workspacePath), 'review_accepted')
     return accepted
+  }
+
+  resolveCheckoutConflict(
+    runId: string,
+    strategy: CheckoutStrategy,
+    expectedStateVersion: number
+  ): RunState {
+    const state = this.requireState(runId, expectedStateVersion)
+    if (state.waitingReason !== 'checkout_busy') return state
+    if (strategy === 'cancel') return this.cancel(runId, expectedStateVersion)
+    if (strategy === 'worktree')
+      throw new Error('Create isolated worktree is not available for this Run yet.')
+    return state
   }
 
   onEvent(threadId: string, event: Record<string, unknown>): void {
@@ -294,6 +316,7 @@ export class RunManager {
         checkoutIdentity(state.workspacePath),
         'settled'
       )
+      this.startNextQueued(checkoutIdentity(state.workspacePath))
       return
     }
     if (
@@ -375,6 +398,19 @@ export class RunManager {
       },
       text,
     })
+  }
+
+  private startNextQueued(checkoutId: string): void {
+    if (this.store.hasCheckoutOwner(checkoutId)) return
+    const queued = this.store.nextQueued(checkoutId)
+    if (!queued?.threadId) return
+    const active = transition(queued, {
+      lifecycle: 'continuation_queued',
+      waitingReason: null,
+      phase: 'planning',
+    })
+    this.save(active, checkoutId, 'checkout_acquired')
+    this.sendRunPrompt(active, active.contract.originalInput.text)
   }
 
   private save(state: RunState, checkoutId: string, event: string): void {

@@ -231,6 +231,9 @@ export const runPauseSchema = runIdSchema.extend({
 })
 export const runAnswerInputSchema = runIdSchema.extend({ answer: z.string().min(1).max(100_000) })
 export const runRequestChangesSchema = runIdSchema.extend({ text: z.string().min(1).max(100_000) })
+export const checkoutStrategySchema = z.enum(['queue', 'cancel', 'worktree'])
+export const runCheckoutConflictSchema = runIdSchema.extend({ strategy: checkoutStrategySchema })
+export type CheckoutStrategy = z.infer<typeof checkoutStrategySchema>
 
 export const sessionPromptResultSchema = z.discriminatedUnion('accepted', [
   z.object({ accepted: z.literal(true), runId: z.string().uuid().optional() }),

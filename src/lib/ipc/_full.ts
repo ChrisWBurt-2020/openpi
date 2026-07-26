@@ -33,6 +33,7 @@ export const sessionPromptSchema = z.object({
   text: z.string().min(1).max(100_000),
   contextPrefix: z.string().min(1).max(100_000).optional(),
   intent: z.enum(['ask', 'run']).optional().default('ask'),
+  checkoutStrategy: z.enum(['queue', 'cancel', 'worktree']).optional().default('cancel'),
 })
 export type SessionPrompt = z.infer<typeof sessionPromptSchema>
 

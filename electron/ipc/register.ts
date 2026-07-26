@@ -226,10 +226,10 @@ export function registerMainIpcHandlers(deps: RegisterMainIpcHandlersDeps): void
     refreshSessionIndex,
     normalizeSessionReady,
     applySessionValues,
-    startRun: (input) => {
+    startRun: (input, strategy) => {
       const manager = deps.getRunManager?.()
       if (!manager) throw new Error('Run manager is not ready')
-      return manager.start(input)
+      return manager.start(input, strategy)
     },
     pauseRunForThread: (threadId) => deps.getRunManager?.()?.pauseThread(threadId) ?? false,
   })

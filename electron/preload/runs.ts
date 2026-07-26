@@ -30,4 +30,14 @@ export const runsApi = {
     expectedStateVersion: number
   ): Promise<RunState> =>
     ipcRenderer.invoke(IPC.RUN_REQUEST_CHANGES, { runId, text, expectedStateVersion }),
+  resolveRunCheckoutConflict: (
+    runId: string,
+    strategy: 'queue' | 'cancel' | 'worktree',
+    expectedStateVersion: number
+  ): Promise<RunState> =>
+    ipcRenderer.invoke(IPC.RUN_RESOLVE_CHECKOUT_CONFLICT, {
+      runId,
+      strategy,
+      expectedStateVersion,
+    }),
 } as const

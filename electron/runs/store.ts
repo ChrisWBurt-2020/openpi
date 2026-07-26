@@ -105,6 +105,19 @@ export class RunStore {
     })
   }
 
+  nextQueued(checkoutId: string): RunState | null {
+    const rows = this.db
+      .prepare(
+        "select state_json from runs where checkout_id = ? and lifecycle = 'waiting' order by updated_at"
+      )
+      .all(checkoutId) as Array<{ state_json: string }>
+    return (
+      rows
+        .map((row) => this.parse(row.state_json))
+        .find((state) => state?.waitingReason === 'checkout_busy') ?? null
+    )
+  }
+
   hasCheckoutOwner(checkoutId: string): boolean {
     return Boolean(
       this.db

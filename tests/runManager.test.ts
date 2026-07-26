@@ -43,6 +43,17 @@ class MemoryRunStore {
     )
   }
 
+  nextQueued(checkoutId: string): RunState | null {
+    return (
+      [...this.states.values()].find(
+        (entry) =>
+          entry.checkoutId === checkoutId &&
+          entry.state.lifecycle === 'waiting' &&
+          entry.state.waitingReason === 'checkout_busy'
+      )?.state ?? null
+    )
+  }
+
   releaseLease(runId: string): void {
     for (const entry of this.states.values()) {
       if (entry.state.id === runId) entry.checkoutId = `released:${runId}`
@@ -133,5 +144,15 @@ describe('RunManager failure reconciliation', () => {
         expect.objectContaining({ id: first.id, waitingReason: 'connection_lost' }),
       ])
     )
+  })
+
+  it('persists a queued Run without giving it checkout ownership', () => {
+    const { manager, root } = createManager()
+    manager.start({ threadId: 'thread-1', sessionPath: null, workspacePath: root })
+    const queued = manager.start(
+      { threadId: 'thread-2', sessionPath: null, workspacePath: root, text: 'review' },
+      'queue'
+    )
+    expect(queued).toMatchObject({ lifecycle: 'waiting', waitingReason: 'checkout_busy' })
   })
 })

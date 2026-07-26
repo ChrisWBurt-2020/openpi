@@ -30,6 +30,7 @@ import {
   setSessionNameSchema,
   usageSummaryRequestSchema,
 } from '../../src/lib/ipc'
+import type { CheckoutStrategy, RunState } from '../../src/lib/runs'
 import { createWorktree, generateWorktreePath, getCurrentBranch } from '../git/worktree'
 import type { SidecarCommand, SidecarMessage } from '../pi/sidecar'
 import { CheckoutBusyError } from '../runs/manager'
@@ -77,16 +78,16 @@ interface SessionsIpcDeps {
   refreshSessionIndex: () => Promise<void>
   normalizeSessionReady: (payload: SessionReady) => SessionReady
   applySessionValues: (ready: SessionReady) => void
-  startRun?: (input: {
-    threadId: string
-    sessionPath: string | null
-    workspacePath: string
-    text: string
-    contextRefs: string[]
-  }) => {
-    id: string
-    contractVersion: number
-  }
+  startRun?: (
+    input: {
+      threadId: string
+      sessionPath: string | null
+      workspacePath: string
+      text: string
+      contextRefs: string[]
+    },
+    strategy: CheckoutStrategy
+  ) => RunState
   pauseRunForThread?: (threadId: string) => boolean
 }
 
@@ -148,18 +149,29 @@ export function registerSessionsIpc(deps: SessionsIpcDeps): void {
 
   deps.ipcMain.handle(IPC.SESSION_PROMPT, async (_event, raw: unknown) => {
     if (!(await deps.ensureActiveSession())) return
-    const { text, contextPrefix, intent } = sessionPromptSchema.parse(raw)
+    const { text, contextPrefix, intent, checkoutStrategy } = sessionPromptSchema.parse(raw)
     const session = deps.getSessionState()
-    let run: { id: string; contractVersion: number } | undefined
+    let run: RunState | undefined
     if (intent === 'run' && session) {
       try {
-        run = deps.startRun?.({
-          threadId: session.threadId,
-          sessionPath: session.sessionFile,
-          workspacePath: session.cwd,
-          text,
-          contextRefs: contextPrefix ? [contextPrefix] : [],
-        })
+        run = deps.startRun?.(
+          {
+            threadId: session.threadId,
+            sessionPath: session.sessionFile,
+            workspacePath: session.cwd,
+            text,
+            contextRefs: contextPrefix ? [contextPrefix] : [],
+          },
+          checkoutStrategy
+        )
+        if (run && checkoutStrategy === 'queue' && run.lifecycle === 'waiting') {
+          return {
+            accepted: false as const,
+            reason: 'checkout_busy' as const,
+            message: 'Run queued until the active Run releases this checkout.',
+            runId: run.id,
+          }
+        }
       } catch (error) {
         if (error instanceof CheckoutBusyError) {
           return {

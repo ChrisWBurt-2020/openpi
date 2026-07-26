@@ -35,9 +35,10 @@ export const sessionApi = {
   prompt: (
     text: string,
     contextPrefix?: string,
-    intent: 'ask' | 'run' = 'ask'
+    intent: 'ask' | 'run' = 'ask',
+    checkoutStrategy: 'queue' | 'cancel' | 'worktree' = 'cancel'
   ): Promise<SessionPromptResult> =>
-    ipcRenderer.invoke(IPC.SESSION_PROMPT, { text, contextPrefix, intent }),
+    ipcRenderer.invoke(IPC.SESSION_PROMPT, { text, contextPrefix, intent, checkoutStrategy }),
   steer: (text: string, contextPrefix?: string): Promise<void> =>
     ipcRenderer.invoke(IPC.SESSION_STEER, { text, contextPrefix }),
   followUp: (text: string, contextPrefix?: string): Promise<void> =>
