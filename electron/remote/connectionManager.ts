@@ -334,46 +334,25 @@ export class RemoteConnectionManager {
             return null
           }
           case 'find': {
-            const target = await toRemote(this.requireWorkspacePath(request))
-            const output = await this.execWorkspaceFind(client, target, request.pattern ?? '*')
+            const target = workspaceCandidate(root, virtualCwd, this.requireWorkspacePath(request))
+            const output = await this.execWorkspaceFind(
+              client,
+              root,
+              target,
+              request.pattern ?? '*'
+            )
             return output
               .split(/\r?\n/)
               .filter(Boolean)
               .map((entry) => path.join(request.path ?? virtualCwd, entry.replace(/^\.\//, '')))
           }
           case 'tree': {
-            const target = await toRemote(this.requireWorkspacePath(request))
-            const ignored = new Set([
-              '.git',
-              'node_modules',
-              'dist',
-              'build',
-              'out',
-              '__pycache__',
-              '.venv',
-              'venv',
-              'target',
-              '.cache',
-              'coverage',
-            ])
-            const files: string[] = []
-            const pending = [{ remote: target, relative: '' }]
-            while (pending.length > 0 && files.length < 5_000) {
-              const current = pending.shift()
-              if (!current) break
-              const entries = await this.sftpReadDirDetailed(await requireSftp(), current.remote)
-              for (const entry of entries) {
-                if (ignored.has(entry.filename)) continue
-                const relative = current.relative
-                  ? `${current.relative}/${entry.filename}`
-                  : entry.filename
-                const remote = path.posix.join(current.remote, entry.filename)
-                if (entry.isDirectory) pending.push({ remote, relative })
-                else files.push(path.join(request.path ?? virtualCwd, relative))
-                if (files.length >= 5_000) break
-              }
-            }
-            return files
+            const target = workspaceCandidate(root, virtualCwd, this.requireWorkspacePath(request))
+            const output = await this.execWorkspaceTree(client, root, target)
+            return output
+              .split(/\r?\n/)
+              .filter(Boolean)
+              .map((entry) => path.join(request.path ?? virtualCwd, entry.replace(/^\.\//, '')))
           }
           case 'bash': {
             const operationCwd = workspaceCandidate(root, virtualCwd, request.cwd ?? virtualCwd)
@@ -596,26 +575,6 @@ export class RemoteConnectionManager {
     )
   }
 
-  private sftpReadDirDetailed(
-    sftp: SFTPWrapper,
-    target: string
-  ): Promise<Array<{ filename: string; isDirectory: boolean }>> {
-    return new Promise((resolve, reject) =>
-      sftp.readdir(target, (error, entries) =>
-        error
-          ? reject(error)
-          : resolve(
-              entries
-                .filter((entry) => entry.filename !== '.' && entry.filename !== '..')
-                .map((entry) => ({
-                  filename: entry.filename,
-                  isDirectory: entry.attrs.isDirectory(),
-                }))
-            )
-      )
-    )
-  }
-
   private sftpRealpath(sftp: SFTPWrapper, target: string): Promise<string> {
     return new Promise((resolve, reject) =>
       sftp.realpath(target, (error, resolved) =>
@@ -759,7 +718,12 @@ export class RemoteConnectionManager {
     })
   }
 
-  private execWorkspaceFind(client: Client, cwd: string, pattern: string): Promise<string> {
+  private execWorkspaceFind(
+    client: Client,
+    root: string,
+    cwd: string,
+    pattern: string
+  ): Promise<string> {
     return new Promise((resolve, reject) => {
       client.exec('sh -s', (error, stream) => {
         if (error) return reject(error)
@@ -772,13 +736,52 @@ export class RemoteConnectionManager {
           else
             reject(new Error(stderr.trim() || `Remote find exited with code ${code ?? 'unknown'}`))
         })
+        const selectedRoot = Buffer.from(root, 'utf8').toString('base64')
         const workspace = Buffer.from(cwd, 'utf8').toString('base64')
         const encodedPattern = Buffer.from(pattern, 'utf8').toString('base64')
         stream.end(
-          `workspace=$(printf '%s' '${workspace}' | base64 -d) || exit 125\n` +
+          `root=$(printf '%s' '${selectedRoot}' | base64 -d) || exit 125\n` +
+            `workspace=$(printf '%s' '${workspace}' | base64 -d) || exit 125\n` +
             `pattern=$(printf '%s' '${encodedPattern}' | base64 -d) || exit 125\n` +
-            'cd -- "$workspace" || exit 126\n' +
+            'resolved_root=$(cd -- "$root" && pwd -P) || exit 126\n' +
+            'resolved_workspace=$(cd -- "$workspace" && pwd -P) || exit 126\n' +
+            'case "$resolved_workspace" in\n' +
+            '  "$resolved_root"|"$resolved_root"/*) ;;\n' +
+            '  *) printf "%s\\n" "Remote workspace path resolves outside its selected root" >&2; exit 126 ;;\n' +
+            'esac\n' +
+            'cd -- "$resolved_workspace" || exit 126\n' +
             'find . -type f -name "$pattern" -print\n'
+        )
+      })
+    })
+  }
+
+  private execWorkspaceTree(client: Client, root: string, cwd: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      client.exec('sh -s', (error, stream) => {
+        if (error) return reject(error)
+        let stdout = ''
+        let stderr = ''
+        stream.on('data', (chunk: Buffer) => (stdout += chunk.toString('utf8')))
+        stream.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString('utf8')))
+        stream.on('close', (code: number | null) => {
+          if (code === 0) resolve(stdout)
+          else
+            reject(new Error(stderr.trim() || `Remote tree exited with code ${code ?? 'unknown'}`))
+        })
+        const selectedRoot = Buffer.from(root, 'utf8').toString('base64')
+        const workspace = Buffer.from(cwd, 'utf8').toString('base64')
+        stream.end(
+          `root=$(printf '%s' '${selectedRoot}' | base64 -d) || exit 125\n` +
+            `workspace=$(printf '%s' '${workspace}' | base64 -d) || exit 125\n` +
+            'resolved_root=$(cd -- "$root" && pwd -P) || exit 126\n' +
+            'resolved_workspace=$(cd -- "$workspace" && pwd -P) || exit 126\n' +
+            'case "$resolved_workspace" in\n' +
+            '  "$resolved_root"|"$resolved_root"/*) ;;\n' +
+            '  *) printf "%s\\n" "Remote workspace path resolves outside its selected root" >&2; exit 126 ;;\n' +
+            'esac\n' +
+            'cd -- "$resolved_workspace" || exit 126\n' +
+            "find . \\( -path './.git' -o -path './node_modules' -o -path './dist' -o -path './build' -o -path './out' -o -path './__pycache__' -o -path './.venv' -o -path './venv' -o -path './target' -o -path './.cache' -o -path './coverage' \\) -prune -o -type f -print | head -n 5000\n"
         )
       })
     })
