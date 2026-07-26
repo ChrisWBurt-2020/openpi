@@ -6,8 +6,19 @@ import type {
   SessionError,
   SessionEvent,
   SessionReady,
+  ThreadSessionError,
+  ThreadSessionEvent,
+  ThreadSessionReady,
 } from '../../src/lib/ipc'
-import { IPC } from '../../src/lib/ipc'
+import {
+  IPC,
+  sessionErrorSchema,
+  sessionEventSchema,
+  sessionReadySchema,
+  threadSessionErrorSchema,
+  threadSessionEventSchema,
+  threadSessionReadySchema,
+} from '../../src/lib/ipc'
 
 interface RemoteSessionStatusPayload {
   app: string
@@ -20,20 +31,39 @@ interface RemoteSessionStatusPayload {
 export const eventsApi = {
   sendPrompt: (text: string): Promise<void> => ipcRenderer.invoke(IPC.SEND_PROMPT, { text }),
 
-  onSessionReady: (cb: (payload: SessionReady) => void) => {
-    const handler = (_: Electron.IpcRendererEvent, payload: SessionReady) => cb(payload)
+  onSessionReady: (cb: (payload: ThreadSessionReady) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, payload: ThreadSessionReady | SessionReady) => {
+      const scoped = threadSessionReadySchema.safeParse(payload)
+      cb(
+        scoped.success
+          ? scoped.data
+          : { threadId: 'legacy', ready: sessionReadySchema.parse(payload) }
+      )
+    }
     ipcRenderer.on(IPC.SESSION_READY, handler)
     return () => ipcRenderer.removeListener(IPC.SESSION_READY, handler)
   },
 
-  onSessionEvent: (cb: (event: SessionEvent) => void) => {
-    const handler = (_: Electron.IpcRendererEvent, event: SessionEvent) => cb(event)
+  onSessionEvent: (cb: (payload: ThreadSessionEvent) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, payload: ThreadSessionEvent | SessionEvent) => {
+      const scoped = threadSessionEventSchema.safeParse(payload)
+      cb(
+        scoped.success
+          ? scoped.data
+          : { threadId: 'legacy', event: sessionEventSchema.parse(payload) }
+      )
+    }
     ipcRenderer.on(IPC.SESSION_EVENT, handler)
     return () => ipcRenderer.removeListener(IPC.SESSION_EVENT, handler)
   },
 
-  onSessionError: (cb: (error: SessionError) => void) => {
-    const handler = (_: Electron.IpcRendererEvent, error: SessionError) => cb(error)
+  onSessionError: (cb: (payload: ThreadSessionError) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, payload: ThreadSessionError | SessionError) => {
+      const scoped = threadSessionErrorSchema.safeParse(payload)
+      cb(
+        scoped.success ? scoped.data : { threadId: null, error: sessionErrorSchema.parse(payload) }
+      )
+    }
     ipcRenderer.on(IPC.SESSION_ERROR, handler)
     return () => ipcRenderer.removeListener(IPC.SESSION_ERROR, handler)
   },

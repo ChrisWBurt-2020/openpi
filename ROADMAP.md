@@ -24,7 +24,7 @@ These anchors come from Pi’s design and [Mario Zechner’s writing](https://ma
 
 ---
 
-## Current Status (beta) — v0.2.1
+## Current Status (beta) — v0.2.4 + unreleased
 
 Done so far:
 - Electron shell with secure preload bridge, Zod-backed IPC contracts, sandboxed renderer, and main-owned authority for filesystem, PTY, Git, and app metadata.
@@ -32,6 +32,7 @@ Done so far:
 - Session/workspace read model in SQLite, last-workspace restore, session search/sort/group controls, pinned/archive flows, and new-session hero metadata (workspace path, Git branch, last modified).
 - Customizations inventory for Extensions, Skills, Prompts, Themes, Packages, Settings, General preferences, and Keybindings; command palette (`⇧⌘P`).
 - **Conversation polish**: live token counter, code line numbers, streaming cursor fix, entry animation, responsive images, and composer line-comment context chips.
+- **Concurrent chats**: one isolated Pi sidecar per live thread (up to three), thread-scoped IPC and renderer snapshots, background progress retention, safe non-eviction of running work, and a persistent all-project chat sidebar with running indicators.
 - **File editor improvements**: CodeMirror 6 editor, format-on-save (Biome), word wrap toggle, FORMAT_FILE IPC, find-with-replace.
 - **Extensions UI**: enable/disable toggle per extension, preference persistence, reload button.
 - **Terminal tabs**: renameable tabs, add/close/switch, process exit indicators.
@@ -128,7 +129,7 @@ Roadmap implications:
 
 ---
 
-## Pi Integration Reality (v0.74.0)
+## Pi Integration Reality (v0.82.1)
 
 These facts must drive implementation. Do not guess or approximate.
 
@@ -465,8 +466,9 @@ Acceptance criteria:
 | **P0** | **Live token/cost per turn** | Inspectability during streaming, not only post-`agent_end`. |
 | **P1** | **Session map v2** | Pi’s tree model visible: branches, compaction, labels, navigate/fork. |
 | **P1** | **Subagent/task card polish** | Expand/collapse, abort — UI on existing OpenPi subagent tools; don’t add new agent runtimes. |
+| **P1** | **Concurrent chats** ✅ | Isolated workers, thread-scoped state, retained background progress, capacity protection, and visible running status. |
 | **P2** | **Workbench context bridge** | cwd / visible file / terminal snippet for steering — narrow scope. |
-| **P2** | **Auto-updater** | Release hygiene once signing (Phase 6 #10) exists. |
+| **P2** | **Auto-updater** ✅ | `electron-updater` is wired; broad rollout remains gated on signing (Phase 6 #10). |
 
 Build notes:
 1. **Testing strategy execution** — IPC Zod roundtrips, fake `AgentSession` fixtures, SQLite upserts, PTY smoke, permission tests in Vitest.

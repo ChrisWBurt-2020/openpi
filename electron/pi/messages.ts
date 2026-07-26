@@ -15,9 +15,11 @@ import { isStaleExtensionCtxEvent } from './staleCtx'
 interface SidecarMessageDeps {
   getMainWindow: () => BrowserWindow | null
   normalizeSessionReady: (payload: SessionReady) => SessionReady
-  applySessionReady: (ready: SessionReady, cwd: string) => void
+  applySessionReady: (ready: SessionReady, cwd: string, threadId?: string) => void
   refreshSessionIndex: () => Promise<void>
   resolveActiveCwd: () => string | null
+  resolveThreadCwd?: (threadId: string) => string | null
+  isForegroundThread?: (threadId: string) => boolean
   showSystemNotification: typeof notifySystem
   playSoundEffect: typeof playSound
   getGitHost: () => Promise<typeof GitHost>
@@ -36,9 +38,29 @@ interface SessionEventShape {
 }
 
 export function createSidecarMessageHandler(deps: SidecarMessageDeps) {
-  const epochs = deps.epochGate ?? new SessionEpochGate()
+  const epochsByThread = new Map<string, SessionEpochGate>()
 
-  return function handleSidecarMessage(msg: SidecarMessage): void {
+  function epochsFor(threadId: string): SessionEpochGate {
+    if (threadId === 'legacy' && deps.epochGate) return deps.epochGate
+    const current = epochsByThread.get(threadId)
+    if (current) return current
+    const created = new SessionEpochGate()
+    epochsByThread.set(threadId, created)
+    return created
+  }
+
+  return function handleSidecarMessage(
+    threadIdOrMessage: string | SidecarMessage,
+    maybeMessage?: SidecarMessage
+  ): void {
+    // The one-argument form remains as a test/backward-compatibility seam.
+    // Production always supplies the pool identity as the first argument.
+    const threadId = typeof threadIdOrMessage === 'string' ? threadIdOrMessage : 'legacy'
+    const msg = typeof threadIdOrMessage === 'string' ? maybeMessage : threadIdOrMessage
+    if (!msg) return
+    const epochs = epochsFor(threadId)
+    const isForeground = deps.isForegroundThread?.(threadId) ?? true
+
     switch (msg.type) {
       case 'ready':
         // The sidecar restarted, so its epoch counter starts over.
@@ -50,7 +72,7 @@ export function createSidecarMessageHandler(deps: SidecarMessageDeps) {
       case 'session_ready': {
         if (!epochs.observeReady(msg.epoch)) return
         const ready = deps.normalizeSessionReady(msg.payload)
-        deps.applySessionReady(ready, ready.cwd)
+        deps.applySessionReady(ready, ready.cwd, threadId)
         return
       }
 
@@ -62,17 +84,23 @@ export function createSidecarMessageHandler(deps: SidecarMessageDeps) {
 
         const event = msg.event as SessionEventShape
         const window = deps.getMainWindow()
+        window?.webContents.send(IPC.SESSION_EVENT, { threadId, event: msg.event })
+
+        // Background streams reach the renderer, but foreground-only services
+        // must remain owned by the thread the user is currently viewing.
+        if (!isForeground) return
+
         setAgentReviewWindow(window)
-        deps.getMainWindow()?.webContents.send(IPC.SESSION_EVENT, msg.event)
         if (event.type === 'tool_execution_start' || event.type === 'tool_execution_end') {
-          captureAgentReviewEvent(deps.resolveActiveCwd(), msg.event as Record<string, unknown>)
+          const cwd = deps.resolveThreadCwd?.(threadId) ?? deps.resolveActiveCwd()
+          captureAgentReviewEvent(cwd, msg.event as Record<string, unknown>)
         }
 
         if (event.type === 'agent_end') {
           setTimeout(() => {
             void deps.refreshSessionIndex()
           }, 0)
-          const cwd = deps.resolveActiveCwd()
+          const cwd = deps.resolveThreadCwd?.(threadId) ?? deps.resolveActiveCwd()
           deps.showSystemNotification(
             'notifyAgentStatus',
             'Agent complete',
@@ -124,14 +152,22 @@ export function createSidecarMessageHandler(deps: SidecarMessageDeps) {
       }
 
       case 'session_error':
-        deps.emitSessionError(msg.message, msg.code)
+        deps.getMainWindow()?.webContents.send(IPC.SESSION_ERROR, {
+          threadId,
+          error: { message: msg.message, ...(msg.code ? { code: msg.code } : {}) },
+        })
+        if (isForeground) {
+          deps.showSystemNotification('notifyErrors', 'OpenPi error', msg.message)
+          deps.playSoundEffect('soundErrors')
+        }
         return
 
       case 'session_index_updated':
-        void deps.refreshSessionIndex()
+        if (isForeground) void deps.refreshSessionIndex()
         return
 
       case 'provider_login_event': {
+        if (!isForeground) return
         const event = msg.event as { type?: string; url?: string }
         if (event.type === 'auth' && typeof event.url === 'string') {
           void shell.openExternal(event.url)
@@ -145,11 +181,20 @@ export function createSidecarMessageHandler(deps: SidecarMessageDeps) {
         return
 
       case 'extension_ui_request':
-        deps.getMainWindow()?.webContents.send(IPC.EXTENSION_UI_REQUEST, msg.request)
+        if (isForeground) {
+          deps.getMainWindow()?.webContents.send(IPC.EXTENSION_UI_REQUEST, msg.request)
+        }
         return
 
       case 'error':
-        deps.emitSessionError(msg.message)
+        deps.getMainWindow()?.webContents.send(IPC.SESSION_ERROR, {
+          threadId,
+          error: { message: msg.message },
+        })
+        if (isForeground) {
+          deps.showSystemNotification('notifyErrors', 'OpenPi error', msg.message)
+          deps.playSoundEffect('soundErrors')
+        }
         return
 
       default:

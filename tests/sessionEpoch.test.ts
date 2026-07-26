@@ -112,3 +112,77 @@ describe('sidecar restart', () => {
     expect(sendToRenderer).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('concurrent thread routing', () => {
+  it('keeps epoch gates independent and tags every forwarded event', () => {
+    const sendToRenderer = vi.fn()
+    const handler = createSidecarMessageHandler({
+      getMainWindow: () => ({ webContents: { send: sendToRenderer } }) as never,
+      normalizeSessionReady: (payload) => payload,
+      applySessionReady: vi.fn(),
+      refreshSessionIndex: async () => {},
+      resolveActiveCwd: () => 'C:\\a',
+      resolveThreadCwd: (threadId) => (threadId === 'thread-a' ? 'C:\\a' : 'C:\\b'),
+      isForegroundThread: (threadId) => threadId === 'thread-a',
+      showSystemNotification: vi.fn(),
+      playSoundEffect: vi.fn(),
+      getGitHost: async () => await import('../electron/git/gitHost'),
+      emitSessionError: vi.fn(),
+      emitOutputLine: vi.fn(),
+    })
+
+    handler('thread-a', {
+      type: 'session_ready',
+      payload: { cwd: 'C:\\a' } as never,
+      epoch: 5,
+    })
+    handler('thread-b', {
+      type: 'session_ready',
+      payload: { cwd: 'C:\\b' } as never,
+      epoch: 1,
+    })
+
+    // Stale in A, current in B. A's higher counter must not suppress B.
+    handler('thread-a', { type: 'session_event', event: { type: 'message_start' }, epoch: 4 })
+    handler('thread-b', { type: 'session_event', event: { type: 'message_start' }, epoch: 1 })
+
+    expect(sendToRenderer).toHaveBeenCalledTimes(1)
+    expect(sendToRenderer).toHaveBeenCalledWith('openpi:session-event', {
+      threadId: 'thread-b',
+      event: { type: 'message_start' },
+    })
+  })
+
+  it('forwards background events without running foreground side effects', () => {
+    const sendToRenderer = vi.fn()
+    const refreshSessionIndex = vi.fn(async () => {})
+    const showSystemNotification = vi.fn()
+    const playSoundEffect = vi.fn()
+    const getGitHost = vi.fn(async () => await import('../electron/git/gitHost'))
+    const handler = createSidecarMessageHandler({
+      getMainWindow: () => ({ webContents: { send: sendToRenderer } }) as never,
+      normalizeSessionReady: (payload) => payload,
+      applySessionReady: vi.fn(),
+      refreshSessionIndex,
+      resolveActiveCwd: () => 'C:\\foreground',
+      resolveThreadCwd: () => 'C:\\background',
+      isForegroundThread: (threadId) => threadId === 'foreground',
+      showSystemNotification,
+      playSoundEffect,
+      getGitHost,
+      emitSessionError: vi.fn(),
+      emitOutputLine: vi.fn(),
+    })
+
+    handler('background', { type: 'session_event', event: { type: 'agent_end' }, epoch: 1 })
+
+    expect(sendToRenderer).toHaveBeenCalledWith('openpi:session-event', {
+      threadId: 'background',
+      event: { type: 'agent_end' },
+    })
+    expect(refreshSessionIndex).not.toHaveBeenCalled()
+    expect(showSystemNotification).not.toHaveBeenCalled()
+    expect(playSoundEffect).not.toHaveBeenCalled()
+    expect(getGitHost).not.toHaveBeenCalled()
+  })
+})

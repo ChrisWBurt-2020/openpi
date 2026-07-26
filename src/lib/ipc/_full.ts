@@ -578,6 +578,22 @@ export const sessionReadySchema = z.object({
 })
 export type SessionReady = z.infer<typeof sessionReadySchema>
 
+/**
+ * Renderer-facing identity for a live Pi worker. This is deliberately the
+ * sidecar-pool identity rather than `SessionReady.sessionId`: a new session
+ * has no Pi session ID until it is ready, while its worker still needs a
+ * stable destination for streamed events.
+ */
+export const threadIdSchema = z.string().min(1)
+export type ThreadId = z.infer<typeof threadIdSchema>
+
+/** A session-ready notification scoped to its live worker. */
+export const threadSessionReadySchema = z.object({
+  threadId: threadIdSchema,
+  ready: sessionReadySchema,
+})
+export type ThreadSessionReady = z.infer<typeof threadSessionReadySchema>
+
 // ─── SESSION_EVENT payload ───────────────────────────────────────────────────
 // We forward Pi's AgentSessionEvent over IPC as a plain JSON object.
 // The renderer receives it as-is and discriminates on `type`.
@@ -589,6 +605,13 @@ export const sessionEventSchema = z
   .passthrough()
 export type SessionEvent = z.infer<typeof sessionEventSchema>
 
+/** An agent event scoped to the worker that emitted it. */
+export const threadSessionEventSchema = z.object({
+  threadId: threadIdSchema,
+  event: sessionEventSchema,
+})
+export type ThreadSessionEvent = z.infer<typeof threadSessionEventSchema>
+
 // ─── SESSION_ERROR payload ───────────────────────────────────────────────────
 
 export const sessionErrorSchema = z.object({
@@ -596,6 +619,17 @@ export const sessionErrorSchema = z.object({
   code: z.string().optional(),
 })
 export type SessionError = z.infer<typeof sessionErrorSchema>
+
+/**
+ * A session error scoped to a worker when one is known. Errors raised before a
+ * worker is acquired remain explicitly unscoped instead of being attributed to
+ * the foreground session.
+ */
+export const threadSessionErrorSchema = z.object({
+  threadId: threadIdSchema.nullable(),
+  error: sessionErrorSchema,
+})
+export type ThreadSessionError = z.infer<typeof threadSessionErrorSchema>
 
 // ─── Session name ────────────────────────────────────────────────────────────
 

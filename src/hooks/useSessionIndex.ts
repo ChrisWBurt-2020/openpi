@@ -9,6 +9,7 @@ const WORKSPACE_PREVIEW_LIMIT = 8
 export function useSessionIndex(getFallbackWorkspacePath: () => string | null) {
   const [workspaces, setWorkspaces] = createSignal<WorkspaceInfo[]>([])
   const [sessions, setSessions] = createSignal<SessionListItem[]>([])
+  const [allSessions, setAllSessions] = createSignal<SessionListItem[]>([])
   const [selectedWorkspacePath, setSelectedWorkspacePath] = createSignal<string | null>(null)
   const [sessionQuery, setSessionQuery] = createSignal('')
   const [sortBy, setSortBy] = createSignal<SortMode>('created')
@@ -32,9 +33,23 @@ export function useSessionIndex(getFallbackWorkspacePath: () => string | null) {
       window.openpi.getWorkspaces(),
       window.openpi.getSessions(options),
     ])
+    const projectSessions = await Promise.all(
+      workspaceList.map((workspace) =>
+        window.openpi.getSessions({
+          workspacePath: workspace.path,
+          sortBy: 'updated',
+          showRecent: false,
+          limit: 500,
+        })
+      )
+    )
+    const uniqueSessions = [
+      ...new Map(projectSessions.flat().map((session) => [session.path, session])).values(),
+    ]
     batch(() => {
       setWorkspaces(workspaceList)
       setSessions(sessionList)
+      setAllSessions(uniqueSessions)
       if (!selectedWorkspacePath()) {
         const fallback = workspacePath ?? workspaceList[0]?.path ?? null
         if (fallback) setSelectedWorkspacePath(fallback)
@@ -72,6 +87,7 @@ export function useSessionIndex(getFallbackWorkspacePath: () => string | null) {
   return {
     workspaces,
     sessions,
+    allSessions,
     selectedWorkspacePath,
     sessionQuery,
     sortBy,

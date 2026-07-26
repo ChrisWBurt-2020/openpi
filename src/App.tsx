@@ -419,9 +419,10 @@ export default function App() {
                     }
                   >
                     <ThreadSidebar
-                      sessions={session.sessions}
+                      sessions={session.allSessions}
                       workspaces={session.workspaces}
                       activeSessionPath={activeSessionPath()}
+                      runningSessionPaths={session.runningSessionPaths}
                       onSelectSession={(path: string) =>
                         void session.openExistingSession({ path } as SessionListItem)
                       }
