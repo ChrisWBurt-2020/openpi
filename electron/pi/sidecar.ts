@@ -26,6 +26,7 @@ import {
 } from '@earendil-works/pi-coding-agent'
 import type { InsightMode } from '../../src/lib/insights'
 import { expandPromptTemplateText } from '../../src/lib/sessionPrompt'
+import { bundledThemePaths } from '../services/bundledThemes'
 import { createOpenPiExtensionUIContext } from './extensionUiContext'
 import { fulfillExtensionUiPending } from './extensionUiPending'
 import { createInsightsExtension } from './insightsExtension'
@@ -406,6 +407,7 @@ async function getResourceLoader(cwd: string, workspaceTrusted: boolean) {
     settingsManager,
     noExtensions,
     additionalExtensionPaths: noExtensions ? [agentDir] : [],
+    additionalThemePaths: bundledThemePaths(),
     extensionFactories: [createInsightsExtension(() => insightMode)],
   })
   try {

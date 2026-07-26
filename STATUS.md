@@ -22,7 +22,8 @@ OpenPi is a **human-enabling workbench** for [Pi](https://pi.dev) (`@earendil-wo
 - **Trust (Phase 6):** workspace trust, extension/package install confirms, protected paths, high-risk shell/Git mutation prompts, secret redaction, diagnostics export bundle, SQLite hardening.
 - **Pi-task delegation:** `@heyhuynhgiabuu/pi-task` `task` tool; `.pi/artifacts/TASKS.md` tray + live task widget; click a `task` tool row to navigate to the sub-session; install via Pi packages (`pi install npm:@heyhuynhgiabuu/pi-task`).
  - Conversation polish: live token counter (streaming), code line numbers, tool cards.
- - Pi Signals: mentor-mode, evidence-backed inline cards with confidence/basis labels, a session digest, and an explicit project notebook.
+- Pi Signals: mentor-mode, evidence-backed inline cards with confidence/basis labels, a session digest, and an explicit project notebook.
+- Themes: bundled dark-only **Heron Flight** (celestial indigo/cyan) and **Natural Focus** (forest/gold), with Pi-compatible definitions, renderer atmosphere, reduced-motion and forced-colors fallbacks, and live terminal/editor palette refresh.
  - Agent review: unified Review tab now has a source dropdown for `Git changes` vs `Last turn changes`; last-turn mode uses agent snapshots, file accordions, proper diff rendering, Keep/Revert/Revert all, coalesces repeated edits per file, and supports diff line comments with hover `+`, content-row multi-select, saved annotations, composer chips, and structured `<file_comment>` prompt context.
  - CI: PR/main checks; tag-triggered beta releases (macOS/Windows/Linux). **Signing/notarization not configured.**
 

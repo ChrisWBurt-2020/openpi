@@ -16,6 +16,7 @@ import { RefsPickerPanel } from './components/git/RefsPickerPanel'
 import { Homescreen } from './components/Homescreen'
 import { ResizeHandle } from './components/ResizeHandle'
 import { ThreadSidebar } from './components/sidebar/ThreadSidebar'
+import { ThemeAtmosphere } from './components/ThemeAtmosphere'
 import { ToolShimmerPane } from './components/ToolShimmerPane'
 import { TopBar } from './components/TopBar'
 import { TerminalPanel } from './components/terminal/TerminalPanel'
@@ -325,6 +326,7 @@ export default function App() {
 
         return (
           <div class={`app-shell${conversationStreaming() ? ' agent-streaming' : ''}`}>
+            <ThemeAtmosphere />
             {/* RefsPickerPanel: always mounted so TopBar branch click works
                 even when the git panel is closed */}
             <RefsPickerPanel

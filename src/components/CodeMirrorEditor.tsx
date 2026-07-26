@@ -124,7 +124,7 @@ export function CodeMirrorEditor(props: CodeMirrorEditorProps) {
       })
     })
     themeObserver.observe(document.documentElement, {
-      attributeFilter: ['data-theme'],
+      attributeFilter: ['data-theme', 'data-openpi-theme'],
       attributes: true,
     })
 

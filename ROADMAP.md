@@ -34,6 +34,7 @@ Done so far:
 - **Conversation polish**: live token counter, code line numbers, streaming cursor fix, entry animation, responsive images, and composer line-comment context chips.
 - **Concurrent chats**: one isolated Pi sidecar per live thread (up to three), thread-scoped IPC and renderer snapshots, background progress retention, safe non-eviction of running work, and a persistent all-project chat sidebar with running indicators.
 - **Pi Signals**: a first-party structured insight extension with evidence-backed cards, mentor/balanced/critical modes, and user-curated project notebook entries.
+- **First-party themes**: dark-only Heron Flight and Natural Focus Pi themes, bundled for every sidecar with accessible atmospheric renderer treatments and live terminal/editor palette refresh.
 - **File editor improvements**: CodeMirror 6 editor, format-on-save (Biome), word wrap toggle, FORMAT_FILE IPC, find-with-replace.
 - **Extensions UI**: enable/disable toggle per extension, preference persistence, reload button.
 - **Terminal tabs**: renameable tabs, add/close/switch, process exit indicators.

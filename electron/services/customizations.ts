@@ -12,6 +12,7 @@ import type {
   PackageOperationResult,
 } from '../../src/lib/ipc'
 import { packageOperationResultSchema } from '../../src/lib/ipc'
+import { bundledThemePaths, isFirstPartyThemeId } from './bundledThemes'
 import {
   dedupeItems,
   discoverExtensionItems,
@@ -168,6 +169,7 @@ export async function discoverCustomizations(options: {
     agentDir,
     settingsManager,
     noExtensions: true,
+    additionalThemePaths: bundledThemePaths(),
   })
   const items: CustomizationItem[] = []
   const diagnostics: CustomizationDiagnostic[] = []
@@ -254,6 +256,7 @@ export async function discoverCustomizations(options: {
       enabled: true,
       packageSource: source.origin === 'package' ? source.source : undefined,
       riskLevel: riskLevelForType('themes'),
+      builtIn: isFirstPartyThemeId(theme.name ?? ''),
       lastModifiedAt: mtimeIso(themePath),
     })
   }

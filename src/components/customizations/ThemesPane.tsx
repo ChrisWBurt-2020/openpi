@@ -1,8 +1,18 @@
 // biome-ignore-all lint/a11y/useAriaPropsSupportedByRole: existing decorative theme swatches are tracked separately from this release.
 import { AlertTriangle, Check, RotateCcw } from 'lucide-solid'
 import { createEffect, createMemo, createSignal, For, onMount, Show } from 'solid-js'
+import forestArt from '../../assets/themes/forest.svg'
+import flightHeron from '../../assets/themes/heron.svg'
+import { APPEARANCE_PREF_KEYS, saveAppearancePreference } from '../../lib/appearancePreferences'
+import { isFirstPartyThemeId } from '../../lib/appThemes'
 import type { CustomizationItem, CustomizationScope, ThemeColors } from '../../lib/ipc'
-import { applyThemeTokens, isThemeApplied, resetTheme } from '../../lib/themeApply'
+import {
+  activeThemeId,
+  applyThemeTokens,
+  isThemeApplied,
+  previousThemeColorScheme,
+  resetTheme,
+} from '../../lib/themeApply'
 
 function shortenPath(p: string | null): string {
   if (!p) return ''
@@ -34,6 +44,17 @@ function ColorSwatch(props: { color: string | null | undefined; label: string })
       title={`${props.label}: ${props.color}`}
       aria-label={`${props.label} color: ${props.color}`}
     />
+  )
+}
+
+function ThemePreview(props: { themeId: string }) {
+  if (!isFirstPartyThemeId(props.themeId)) return null
+  const isFlight = props.themeId === 'heron-flight'
+  return (
+    <div class={`thm-preview thm-preview-${props.themeId}`} aria-hidden="true">
+      <img src={isFlight ? flightHeron : forestArt} alt="" />
+      <span>{isFlight ? 'Celestial glass · indigo + cyan' : 'Forest glass · moss + gold'}</span>
+    </div>
   )
 }
 
@@ -77,7 +98,9 @@ function ThemeCard(props: {
   }
 
   return (
-    <article class={`thm-card${props.isActive ? ' is-active' : ''}`}>
+    <article
+      class={`thm-card${props.isActive ? ' is-active' : ''}${props.item.builtIn ? ' is-openpi' : ''}`}
+    >
       <div class="thm-card-header">
         <div class="thm-card-title-row">
           <span class="thm-card-name">{props.item.name}</span>
@@ -119,6 +142,8 @@ function ThemeCard(props: {
         </button>
       </div>
 
+      <ThemePreview themeId={props.item.name} />
+
       <div class="thm-swatches-row">
         <Show
           when={resolvedSwatches().length > 0}
@@ -151,7 +176,7 @@ type ThemesPaneProps = {
 }
 
 export function ThemesPane(props: ThemesPaneProps) {
-  const [activeTheme, setActiveTheme] = createSignal<string | null>(null)
+  const [activeTheme, setActiveTheme] = createSignal<string | null>(activeThemeId())
   const [hasCustomTheme, setHasCustomTheme] = createSignal(isThemeApplied())
 
   onMount(() => {
@@ -162,6 +187,17 @@ export function ThemesPane(props: ThemesPaneProps) {
   })
 
   const applyTheme = async (item: CustomizationItem) => {
+    const currentTheme = activeThemeId()
+    const savedScheme = await window.openpi.getPref(APPEARANCE_PREF_KEYS.colorScheme)
+    const previousScheme = isFirstPartyThemeId(currentTheme)
+      ? previousThemeColorScheme()
+      : savedScheme === 'system' || savedScheme === 'light' || savedScheme === 'dark'
+        ? savedScheme
+        : undefined
+    if (!item.builtIn && isFirstPartyThemeId(currentTheme)) {
+      const restore = previousThemeColorScheme() ?? 'system'
+      await saveAppearancePreference('colorScheme', restore)
+    }
     const current = await window.openpi.getSettings()
     const globalSettings = { ...((current.global as Record<string, unknown>) ?? {}) }
     globalSettings.theme = item.name
@@ -171,18 +207,32 @@ export function ThemesPane(props: ThemesPaneProps) {
     if (item.path) {
       const tokens = await window.openpi.readThemeTokens(item.path)
       if (tokens) {
-        applyThemeTokens(tokens)
+        if (item.builtIn) {
+          await saveAppearancePreference('colorScheme', 'dark')
+        }
+        applyThemeTokens(tokens, item.name, item.builtIn ? previousScheme : undefined)
         setHasCustomTheme(true)
       }
     }
   }
 
-  const handleReset = () => {
+  const handleReset = async () => {
+    const current = await window.openpi.getSettings()
+    const globalSettings = { ...((current.global as Record<string, unknown>) ?? {}) }
+    delete globalSettings.theme
+    await window.openpi.saveSettings('global', globalSettings)
+    const restore = previousThemeColorScheme()
+    if (restore) {
+      await saveAppearancePreference('colorScheme', restore)
+    }
     resetTheme()
+    setActiveTheme(null)
     setHasCustomTheme(false)
   }
 
   const hasBuiltIn = createMemo(() => props.items.some((item) => item.scope === 'temporary'))
+  const openPiThemes = createMemo(() => props.items.filter((item) => item.builtIn))
+  const communityThemes = createMemo(() => props.items.filter((item) => !item.builtIn))
 
   return (
     <div class="thm-pane">
@@ -198,7 +248,7 @@ export function ThemesPane(props: ThemesPaneProps) {
           <button
             type="button"
             class="thm-reset-btn"
-            onClick={handleReset}
+            onClick={() => void handleReset()}
             title="Reset OpenPi UI to default colors"
           >
             <RotateCcw size={12} />
@@ -224,13 +274,28 @@ export function ThemesPane(props: ThemesPaneProps) {
               </div>
             }
           >
-            <Show when={hasBuiltIn()}>
+            <Show when={openPiThemes().length > 0}>
+              <section class="thm-group">
+                <span class="thm-group-label">OpenPi themes</span>
+                <p class="thm-group-copy">Atmospheric, dark workspaces built into OpenPi.</p>
+                <For each={openPiThemes()}>
+                  {(item) => (
+                    <ThemeCard
+                      item={item}
+                      isActive={activeTheme() === item.name}
+                      onApply={applyTheme}
+                    />
+                  )}
+                </For>
+              </section>
+            </Show>
+            <Show when={hasBuiltIn() && communityThemes().length > 0}>
               <p class="thm-builtin-note">
                 Built-in themes (<code>dark</code>, <code>light</code>) are always available and do
                 not appear here.
               </p>
             </Show>
-            <For each={props.items}>
+            <For each={communityThemes()}>
               {(item) => (
                 <ThemeCard
                   item={item}

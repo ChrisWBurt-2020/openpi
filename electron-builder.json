@@ -23,6 +23,10 @@
     {
       "from": "CHANGELOG.md",
       "to": "CHANGELOG.md"
+    },
+    {
+      "from": "themes",
+      "to": "themes"
     }
   ],
   "mac": {

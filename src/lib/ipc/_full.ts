@@ -335,6 +335,8 @@ export const customizationItemSchema = z.object({
   lastModifiedAt: z.string().nullable().optional(),
   /** Risk classification: extensions/packages that run arbitrary code are 'high' */
   riskLevel: resourceRiskLevelSchema.optional(),
+  /** Shipped by OpenPi and safe to use in every workspace. */
+  builtIn: z.boolean().optional(),
 })
 export type CustomizationItem = z.infer<typeof customizationItemSchema>
 

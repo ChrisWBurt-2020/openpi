@@ -13,9 +13,42 @@
  * priority-ordered list of candidate names for each OpenPi CSS var.
  */
 
+import { z } from 'zod'
+import { isFirstPartyThemeId } from './appThemes'
 import type { ThemeTokens } from './ipc'
 
 const STORAGE_KEY = 'openpi-active-theme-vars'
+export const THEME_CHANGED_EVENT = 'openpi:theme-changed'
+
+export interface AppliedThemeState {
+  version: 2
+  themeId: string
+  cssVariables: Record<string, string>
+  previousColorScheme?: 'system' | 'light' | 'dark'
+}
+
+const appliedThemeStateSchema = z.object({
+  version: z.literal(2),
+  themeId: z.string(),
+  cssVariables: z.record(z.string()),
+  previousColorScheme: z.enum(['system', 'light', 'dark']).optional(),
+})
+
+function readStoredThemeState(): AppliedThemeState | null {
+  const raw = localStorage.getItem(STORAGE_KEY)
+  if (!raw) return null
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    const current = appliedThemeStateSchema.safeParse(parsed)
+    if (current.success) return current.data
+
+    // Version 1 was the bare CSS-variable map. Preserve it during migration.
+    const legacy = z.record(z.string()).safeParse(parsed)
+    return legacy.success ? { version: 2, themeId: 'custom', cssVariables: legacy.data } : null
+  } catch {
+    return null
+  }
+}
 
 // All CSS custom properties we may set — used for full reset
 const OPENPI_OWN_VARS = [
@@ -53,6 +86,13 @@ const OPENPI_OWN_VARS = [
   '--shiki-token-parameter',
   '--shiki-token-link',
   '--shiki-token-punctuation',
+  '--theme-panel-alpha',
+  '--theme-blur',
+  '--theme-edge',
+  '--theme-glow',
+  '--theme-vignette',
+  '--theme-grain',
+  '--theme-motion',
 ] as const
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -79,7 +119,11 @@ function set(cssVar: string, val: string | undefined | null): void {
  *   Catppuccin Mocha: crust/mantle/base/surface0/surface1/surface2/overlay0/overlay1/text/subtext0/subtext1
  *   Tokyo Night:     bgDark/bg/gray/dimGray/fg/lightBlue/comment
  */
-export function applyThemeTokens(tokens: ThemeTokens): void {
+export function applyThemeTokens(
+  tokens: ThemeTokens,
+  themeId = 'custom',
+  previousColorScheme?: 'system' | 'light' | 'dark'
+): void {
   const v = tokens.vars // palette, hex
   const c = tokens.colors // semantic, hex
 
@@ -139,45 +183,75 @@ export function applyThemeTokens(tokens: ThemeTokens): void {
   if (_accent) set('--shiki-token-keyword', _accent)
 
   // Persist for restore on next launch
-  persistAppliedVars()
+  const root = document.documentElement
+  if (isFirstPartyThemeId(themeId)) {
+    root.dataset.openpiTheme = themeId
+    root.dataset.theme = 'dark'
+  } else {
+    delete root.dataset.openpiTheme
+  }
+  persistAppliedVars(themeId, previousColorScheme)
+  window.dispatchEvent(new Event(THEME_CHANGED_EVENT))
 }
 
 /** Remove all OpenPi CSS vars we may have set → reverts to index.css defaults. */
 export function resetTheme(): void {
   const root = document.documentElement
   for (const v of OPENPI_OWN_VARS) root.style.removeProperty(v)
+  delete root.dataset.openpiTheme
+  root.dataset.theme = root.dataset.colorScheme ?? 'dark'
   localStorage.removeItem(STORAGE_KEY)
+  window.dispatchEvent(new Event(THEME_CHANGED_EVENT))
 }
 
 /** Save current inline style vars to localStorage. */
-function persistAppliedVars(): void {
+function persistAppliedVars(
+  themeId: string,
+  previousColorScheme?: 'system' | 'light' | 'dark'
+): void {
   const root = document.documentElement
   const snapshot: Record<string, string> = {}
   for (const v of OPENPI_OWN_VARS) {
     const val = root.style.getPropertyValue(v).trim()
     if (val) snapshot[v] = val
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))
+  const state: AppliedThemeState = {
+    version: 2,
+    themeId,
+    cssVariables: snapshot,
+    previousColorScheme,
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
 }
 
 /** Restore theme vars from localStorage on app start (call once in App.tsx). */
 export function restoreThemeFromStorage(): void {
-  const raw = localStorage.getItem(STORAGE_KEY)
-  if (!raw) return
-  try {
-    const snapshot = JSON.parse(raw) as Record<string, string>
-    const root = document.documentElement
-    for (const [k, val] of Object.entries(snapshot)) {
-      if (val && OPENPI_OWN_VARS.includes(k as (typeof OPENPI_OWN_VARS)[number])) {
-        root.style.setProperty(k, val)
-      }
-    }
-  } catch {
+  const state = readStoredThemeState()
+  if (!state) {
     localStorage.removeItem(STORAGE_KEY)
+    return
+  }
+  const root = document.documentElement
+  for (const [key, value] of Object.entries(state.cssVariables)) {
+    if (value && OPENPI_OWN_VARS.includes(key as (typeof OPENPI_OWN_VARS)[number])) {
+      root.style.setProperty(key, value)
+    }
+  }
+  if (isFirstPartyThemeId(state.themeId)) {
+    root.dataset.openpiTheme = state.themeId
+    root.dataset.theme = 'dark'
   }
 }
 
 /** True if any theme vars are currently applied (i.e. theme is active). */
 export function isThemeApplied(): boolean {
   return Boolean(localStorage.getItem(STORAGE_KEY))
+}
+
+export function activeThemeId(): string | null {
+  return readStoredThemeState()?.themeId ?? null
+}
+
+export function previousThemeColorScheme(): AppliedThemeState['previousColorScheme'] {
+  return readStoredThemeState()?.previousColorScheme
 }
