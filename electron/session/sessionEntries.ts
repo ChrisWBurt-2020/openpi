@@ -40,12 +40,18 @@ export function listSessionInfos(workspacePath?: string): SessionInfo[] {
   const sessionsRoot = path.join(os.homedir(), '.pi', 'agent', 'sessions')
   if (!fs.existsSync(sessionsRoot)) return []
 
-  const dirs = workspacePath
-    ? [getDefaultSessionDir(workspacePath)]
-    : fs
+  // Pi resolves a URI cwd through Node's path APIs before it creates its
+  // session directory. Older SSH Workspace sessions therefore live in a
+  // Windows-looking directory even though the workspace identity is ssh://.
+  // Scan the local session root for that compatibility case; new sessions use
+  // getDefaultSessionDir() directly (see piSidecar.ts).
+  const scanAll = !workspacePath || workspacePath.startsWith('ssh://')
+  const dirs = scanAll
+    ? fs
         .readdirSync(sessionsRoot, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
         .map((entry) => path.join(sessionsRoot, entry.name))
+    : [getDefaultSessionDir(workspacePath)]
 
   const infos: SessionInfo[] = []
   for (const dir of dirs) {
@@ -82,8 +88,18 @@ export function buildSessionInfo(
     const header = JSON.parse(firstLine) as unknown
     if (!isRecord(header) || header.type !== 'session' || typeof header.id !== 'string') return null
 
-    const cwd = typeof header.cwd === 'string' ? canonicalizePath(header.cwd) : ''
-    if (expectedWorkspacePath && cwd !== expectedWorkspacePath) return null
+    const headerCwd = typeof header.cwd === 'string' ? canonicalizePath(header.cwd) : ''
+    const remoteWorkspacePath = expectedWorkspacePath?.startsWith('ssh://')
+      ? expectedWorkspacePath
+      : null
+    const cwd = remoteWorkspacePath ?? headerCwd
+    if (expectedWorkspacePath && !remoteWorkspacePath && headerCwd !== expectedWorkspacePath)
+      return null
+    if (
+      remoteWorkspacePath &&
+      !isRemoteSessionForWorkspace(filePath, headerCwd, remoteWorkspacePath)
+    )
+      return null
 
     const timestamp = typeof header.timestamp === 'string' ? header.timestamp : undefined
     return {
@@ -99,6 +115,19 @@ export function buildSessionInfo(
   } catch {
     return null
   }
+}
+
+function isRemoteSessionForWorkspace(
+  filePath: string,
+  headerCwd: string,
+  workspacePath: string
+): boolean {
+  if (path.dirname(filePath) === getDefaultSessionDir(workspacePath)) return true
+  const legacySuffix = workspacePath
+    .replace(/^ssh:\/\//, 'ssh:\\')
+    .replaceAll('/', '\\')
+    .toLowerCase()
+  return headerCwd.replaceAll('/', '\\').toLowerCase().endsWith(legacySuffix)
 }
 
 export function readFirstLine(filePath: string): string | null {

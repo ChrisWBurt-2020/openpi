@@ -468,6 +468,11 @@ async function emitSessionShutdown(
 /** Heartbeat cadence. Must be well under sessionLock's DEFAULT_STALE_MS. */
 const SESSION_LOCK_HEARTBEAT_MS = 30_000
 
+function remoteSessionDir(workspaceIdentity: string): string {
+  const safePath = `--${workspaceIdentity.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`
+  return path.join(os.homedir(), '.pi', 'agent', 'sessions', safePath)
+}
+
 function dropSessionLock(): void {
   if (!_sessionLock) return
   clearInterval(_sessionLock.heartbeat)
@@ -557,6 +562,11 @@ async function startSession(
   }
 
   _remoteWorkspace = opts.remoteWorkspace ?? null
+  // Pi requires an actual local cwd for session and prompt machinery. This
+  // empty, per-worker directory is never a workspace mirror: the trusted
+  // transport extension intercepts every filesystem and shell tool call.
+  const runtimeCwd = _remoteWorkspace ? _remoteWorkspace.virtualCwd : cwd
+  if (_remoteWorkspace) fs.mkdirSync(runtimeCwd, { recursive: true })
   const agentDir = getAgentDir()
   const modelRuntime = await getModelRuntime()
   const fileSettingsManager = SettingsManager.create(_remoteWorkspace ? agentDir : cwd, agentDir)
@@ -597,20 +607,22 @@ async function startSession(
   }
 
   let sessionManager = openPath
-    ? SessionManager.open(openPath, undefined, cwd)
-    : SessionManager.create(cwd)
+    ? SessionManager.open(openPath, undefined, runtimeCwd)
+    : _remoteWorkspace
+      ? SessionManager.create(runtimeCwd, remoteSessionDir(cwd))
+      : SessionManager.create(runtimeCwd)
 
   if (opts.sessionFile && opts.forkEntryId) {
     const branchedSessionFile = sessionManager.createBranchedSession(opts.forkEntryId)
     if (branchedSessionFile) {
-      sessionManager = SessionManager.open(branchedSessionFile, undefined, cwd)
+      sessionManager = SessionManager.open(branchedSessionFile, undefined, runtimeCwd)
     }
   }
 
   const resourceLoader = await getResourceLoader(cwd, workspaceTrusted)
 
   const { session } = await createAgentSession({
-    cwd,
+    cwd: runtimeCwd,
     agentDir,
     sessionManager,
     modelRuntime,
