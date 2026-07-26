@@ -42,6 +42,7 @@ import {
 import type * as GitHost from '../git/gitHost'
 import type { RemoteConnectionManager } from '../remote/connectionManager'
 import { getRemoteFileTree, parseRemoteWorkspace } from '../remote/fileTree'
+import { remoteGitDiff, remoteGitStatus } from '../remote/git'
 import type { filterBlockedPaths as filterProtectedPaths } from '../services/protectedPaths'
 import { enrichTree } from './gitFileTree'
 
@@ -204,7 +205,10 @@ export function registerGitIpc(deps: GitIpcDeps): void {
       const cwd = cwdFromRenderer ?? resolveGitCwd(deps)
       console.log('[openpi:git] GIT_STATUS cwd=', cwd, 'fromRenderer=', !!cwdFromRenderer)
       if (!cwd) return null
-      if (isRemoteWorkspace(cwd)) return null
+      if (isRemoteWorkspace(cwd)) {
+        const manager = deps.getRemoteConnections()
+        return manager ? remoteGitStatus(manager, cwd) : null
+      }
       try {
         const git = await deps.getGitHost()
         const result = await git.getGitStatus(cwd)
@@ -224,7 +228,10 @@ export function registerGitIpc(deps: GitIpcDeps): void {
       console.warn(`[openpi:git] GIT_DIFF no cwd (path=${parsed.path})`)
       return null
     }
-    if (isRemoteWorkspace(cwd)) return null
+    if (isRemoteWorkspace(cwd)) {
+      const manager = deps.getRemoteConnections()
+      return manager ? remoteGitDiff(manager, cwd, parsed.path) : null
+    }
     const git = await deps.getGitHost()
     try {
       const result = await git.getGitFileDiff(cwd, parsed.path, {
