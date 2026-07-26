@@ -69,6 +69,10 @@ function requireCwd(deps: GitIpcDeps): string | null {
   return resolveGitCwd(deps)
 }
 
+function isRemoteWorkspace(cwd: string): boolean {
+  return cwd.startsWith('ssh://')
+}
+
 /**
  * Verify that a hunk patch's `+++ b/<path>` (or `--- a/<path>` for renames/new
  * files) matches the requested filePath. Defends against a compromised renderer
@@ -169,6 +173,7 @@ async function safeGitRead<T>(
   fallback: T,
   run: () => T | Promise<T>
 ): Promise<T> {
+  if (isRemoteWorkspace(cwd)) return fallback
   try {
     return await run()
   } catch (err) {
@@ -182,6 +187,7 @@ export function registerGitIpc(deps: GitIpcDeps): void {
     const cwd = resolveGitCwd(deps)
     console.log('[openpi:git] GIT_PANEL_MOUNTED cwd=', cwd)
     if (!cwd) return
+    if (isRemoteWorkspace(cwd)) return
     void deps.restartGitMonitoring(cwd)
   })
 
@@ -191,6 +197,7 @@ export function registerGitIpc(deps: GitIpcDeps): void {
       const cwd = cwdFromRenderer ?? resolveGitCwd(deps)
       console.log('[openpi:git] GIT_STATUS cwd=', cwd, 'fromRenderer=', !!cwdFromRenderer)
       if (!cwd) return null
+      if (isRemoteWorkspace(cwd)) return null
       try {
         const git = await deps.getGitHost()
         const result = await git.getGitStatus(cwd)
@@ -210,6 +217,7 @@ export function registerGitIpc(deps: GitIpcDeps): void {
       console.warn(`[openpi:git] GIT_DIFF no cwd (path=${parsed.path})`)
       return null
     }
+    if (isRemoteWorkspace(cwd)) return null
     const git = await deps.getGitHost()
     try {
       const result = await git.getGitFileDiff(cwd, parsed.path, {

@@ -1,5 +1,6 @@
 import { eventsApi } from './events'
 import { gitApi } from './git'
+import { remoteApi } from './remote'
 import { resourcesApi } from './resources'
 import { sessionApi } from './session'
 import { terminalApi } from './terminal'
@@ -9,5 +10,6 @@ export const api = {
   ...terminalApi,
   ...gitApi,
   ...resourcesApi,
+  ...remoteApi,
   ...eventsApi,
 } as const

@@ -4,15 +4,20 @@ import {
   ChevronRight,
   Clock3,
   FolderOpen,
+  Globe2,
   MessageSquarePlus,
   MessagesSquare,
   PanelLeftClose,
+  Plus,
+  Repeat2,
+  Trash2,
 } from 'lucide-solid'
-import { createMemo, createSignal, For, Show } from 'solid-js'
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js'
 import { Portal } from 'solid-js/web'
-import type { SessionListItem, WorkspaceInfo } from '../../lib/ipc'
+import type { ConnectionStatus, SessionListItem, WorkspaceInfo } from '../../lib/ipc'
 import { formatRelativeTime } from '../../lib/sessionView'
 import { buildThreadTree, threadLabel } from '../../lib/threadTree'
+import { ProjectPicker } from '../ProjectPicker'
 
 /**
  * ThreadSidebar — Projects and their Chats, always visible.
@@ -46,10 +51,24 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
   // default is the failure mode this whole component exists to fix.
   const [collapsed, setCollapsed] = createSignal<Record<string, boolean>>({})
   const [hoverCard, setHoverCard] = createSignal<HoverCard | null>(null)
+  const [projectPickerOpen, setProjectPickerOpen] = createSignal(false)
+  const [connectionStates, setConnectionStates] = createSignal<Record<string, ConnectionStatus>>({})
 
-  const tree = createMemo(() =>
-    buildThreadTree(props.sessions, props.workspaces, props.activeSessionPath)
-  )
+  onMount(() => {
+    const unsubscribe = window.openpi.connections.onStatus((state) => {
+      setConnectionStates((previous) => ({ ...previous, [state.connectionId]: state.status }))
+    })
+    onCleanup(unsubscribe)
+  })
+
+  const tree = createMemo(() => {
+    const workspaces = props.workspaces.map((workspace) => {
+      if (workspace.location?.kind !== 'ssh') return workspace
+      const status = connectionStates()[workspace.location.connectionId]
+      return status ? { ...workspace, connectionStatus: status } : workspace
+    })
+    return buildThreadTree(props.sessions, workspaces, props.activeSessionPath)
+  })
 
   const toggle = (path: string) => setCollapsed((prev) => ({ ...prev, [path]: !prev[path] }))
 
@@ -61,12 +80,11 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
           <div class="thread-sidebar-header-actions">
             <button
               type="button"
-              class="thread-sidebar-icon-btn"
-              title="Open a folder"
-              aria-label="Open a folder"
-              onClick={() => props.onOpenWorkspace()}
+              class="thread-sidebar-add-btn"
+              title="Add a local or remote project"
+              onClick={() => setProjectPickerOpen(true)}
             >
-              <FolderOpen size={14} />
+              <Plus size={14} /> Add Project
             </button>
             <button
               type="button"
@@ -104,7 +122,26 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
                         }}
                       >
                         {isCollapsed() ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                        <Show when={project.location?.kind === 'ssh'}>
+                          <Globe2 size={13} class="thread-sidebar-project-remote" />
+                        </Show>
                         <span class="thread-sidebar-project-name">{project.displayName}</span>
+                        <Show when={project.connectionLabel}>
+                          <span class="thread-sidebar-project-connection">
+                            {project.executionMode === 'ssh-workspace'
+                              ? 'Local models'
+                              : 'Remote runner'}{' '}
+                            · {project.connectionLabel}
+                          </span>
+                        </Show>
+                        <Show when={project.connectionStatus}>
+                          {(status) => (
+                            <span
+                              class={`connection-status-dot is-${status()}`}
+                              title={`SSH ${status()}`}
+                            />
+                          )}
+                        </Show>
                         <span class="thread-sidebar-count">{project.threads.length}</span>
                       </button>
                       <button
@@ -121,6 +158,41 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
                       >
                         <MessageSquarePlus size={14} />
                       </button>
+                      <Show when={project.location?.kind === 'ssh'}>
+                        <button
+                          type="button"
+                          class="thread-sidebar-icon-btn"
+                          title={
+                            project.executionMode === 'ssh-workspace'
+                              ? 'Use Persistent Remote Runner for new chats'
+                              : 'Use SSH Workspace with local models for new chats'
+                          }
+                          aria-label="Change remote project execution mode"
+                          onClick={() => {
+                            const executionMode =
+                              project.executionMode === 'ssh-workspace'
+                                ? 'persistent-runner'
+                                : 'ssh-workspace'
+                            void window.openpi.remote.setProjectMode(project.path, executionMode)
+                          }}
+                        >
+                          <Repeat2 size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          class="thread-sidebar-icon-btn"
+                          title={`Remove ${project.displayName} from OpenPi`}
+                          aria-label={`Remove ${project.displayName} from OpenPi`}
+                          onClick={() => {
+                            const approved = window.confirm(
+                              `Remove ${project.displayName} from OpenPi?\n\nThis only removes the local project entry. Files and sessions on the remote host are untouched.`
+                            )
+                            if (approved) void window.openpi.remote.removeProject(project.path)
+                          }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </Show>
                     </div>
 
                     <Show when={!isCollapsed()}>
@@ -186,6 +258,12 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
           </Show>
         </div>
       </nav>
+      <ProjectPicker
+        open={projectPickerOpen()}
+        onClose={() => setProjectPickerOpen(false)}
+        onOpenLocal={async () => props.onOpenWorkspace()}
+        onProjectAdded={async () => undefined}
+      />
       <Portal>
         <Show when={hoverCard()}>
           {(card) => (

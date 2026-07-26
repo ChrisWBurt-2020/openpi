@@ -176,6 +176,18 @@ export default function App() {
   const [appInfo, setAppInfo] = createSignal<AppInfo | null>(null)
   const appPrefs = useAppPrefs({ setAppInfo, setDisplayPreferences, setCustomKeybindings })
   const appName = createMemo(() => appInfo()?.name ?? 'OpenPi')
+  const selectedConnection = createMemo(() => {
+    const workspace = session.workspaces.find((item) => item.path === session.selectedWorkspacePath)
+    if (workspace?.location?.kind !== 'ssh' || !workspace.connectionLabel) return null
+    const executionMode: 'ssh-workspace' | 'persistent-runner' =
+      workspace.executionMode === 'ssh-workspace' ? 'ssh-workspace' : 'persistent-runner'
+    return {
+      label: workspace.connectionLabel,
+      status: workspace.connectionStatus ?? 'disconnected',
+      latencyMs: null,
+      executionMode,
+    }
+  })
   const appVersionLabel = createMemo(() => {
     const info = appInfo()
     if (!info) return null
@@ -337,6 +349,7 @@ export default function App() {
             />
             <TopBar
               workspaceName={workspaceName()}
+              connection={selectedConnection()}
               gitBranch={session.gitBranch}
               gitStats={session.gitStats}
               gitUpstream={gitSyncLabel() || null}

@@ -8,7 +8,7 @@
  * can be tested without rendering anything.
  */
 
-import type { SessionListItem, WorkspaceInfo } from './ipc'
+import type { ConnectionStatus, ProjectExecutionMode, SessionListItem, WorkspaceInfo } from './ipc'
 
 export interface ProjectGroup {
   path: string
@@ -16,6 +16,10 @@ export interface ProjectGroup {
   threads: SessionListItem[]
   /** True when this project holds the thread currently open. */
   containsActive: boolean
+  location: WorkspaceInfo['location']
+  connectionLabel: string | null
+  connectionStatus: ConnectionStatus | null
+  executionMode: ProjectExecutionMode | null
 }
 
 /** Newest first. Sessions carry ISO timestamps, which sort lexicographically. */
@@ -38,6 +42,10 @@ export function buildThreadTree(
       displayName: workspace.displayName,
       threads: [],
       containsActive: false,
+      location: workspace.location,
+      connectionLabel: workspace.connectionLabel ?? null,
+      connectionStatus: workspace.connectionStatus ?? null,
+      executionMode: workspace.executionMode ?? null,
     })
   }
 
@@ -52,6 +60,10 @@ export function buildThreadTree(
         displayName: session.workspaceName || session.workspacePath,
         threads: [],
         containsActive: false,
+        location: undefined,
+        connectionLabel: null,
+        connectionStatus: null,
+        executionMode: null,
       }
       groups.set(session.workspacePath, group)
     }
