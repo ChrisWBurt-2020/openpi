@@ -73,6 +73,39 @@ function createManager() {
 }
 
 describe('RunManager failure reconciliation', () => {
+  it('waits for agent_settled before scheduling a continuation', () => {
+    const { manager, root, sent } = createManager()
+    manager.start({ threadId: 'thread-1', sessionPath: null, workspacePath: root, text: 'inspect' })
+
+    manager.onEvent('thread-1', { type: 'agent_end' })
+    expect(sent).toEqual([])
+
+    manager.onEvent('thread-1', { type: 'agent_settled' })
+    expect(sent).toEqual([
+      expect.objectContaining({ type: 'prompt', intent: 'run', text: '/openpi-run-continue' }),
+    ])
+  })
+
+  it('stops after two identical no-progress continuation fingerprints', () => {
+    const { manager, root } = createManager()
+    const run = manager.start({ threadId: 'thread-1', sessionPath: null, workspacePath: root })
+
+    for (let index = 0; index < 3; index += 1) {
+      manager.onEvent('thread-1', { type: 'agent_start' })
+      manager.onEvent('thread-1', { type: 'agent_settled' })
+    }
+
+    expect(manager.list()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: run.id,
+          lifecycle: 'waiting',
+          waitingReason: 'stalled',
+        }),
+      ])
+    )
+  })
+
   it('does not continue a Run after Pi reports a provider failure', () => {
     const { manager, root } = createManager()
     const run = manager.start({ threadId: 'thread-1', sessionPath: null, workspacePath: root })
