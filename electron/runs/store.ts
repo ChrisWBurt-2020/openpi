@@ -58,7 +58,7 @@ export class RunStore {
           JSON.stringify(state),
           now
         )
-      if (state.lifecycle === 'terminal') {
+      if (!holdsCheckoutLease(state)) {
         this.db.prepare('delete from run_checkout_leases where run_id = ?').run(state.id)
       } else {
         this.db
@@ -171,4 +171,13 @@ export class RunStore {
       return null
     }
   }
+}
+
+/** A disconnected or unconfirmed worker cannot truthfully reserve a checkout. */
+function holdsCheckoutLease(state: RunState): boolean {
+  if (state.lifecycle === 'terminal') return false
+  return !(
+    state.lifecycle === 'waiting' &&
+    (state.waitingReason === 'connection_lost' || state.waitingReason === 'runner_unconfirmed')
+  )
 }

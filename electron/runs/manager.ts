@@ -255,7 +255,6 @@ export class RunManager {
   onWorkerLost(threadId: string, reason: string): void {
     const state = this.store.getByThread(threadId)
     if (!state || state.lifecycle === 'terminal') return
-    this.store.releaseLease(state.id)
     this.save(
       transition(state, {
         lifecycle: 'waiting',
