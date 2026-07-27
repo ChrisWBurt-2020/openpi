@@ -69,6 +69,7 @@ export function useOpenPiSession() {
   const snapshots = new Map<string, ThreadSessionSnapshot>()
   const [activeThreadId, setActiveThreadId] = createSignal<string | null>(null)
   const [snapshotRevision, setSnapshotRevision] = createSignal(0)
+  const [hydratingHistoryThreadId, setHydratingHistoryThreadId] = createSignal<string | null>(null)
   const [transportError, setTransportError] = createSignal<string | null>(null)
   const [composerIntent, setComposerIntent] = createSignal<ComposerIntent>('ask')
   const selectedSnapshot = createMemo(() => {
@@ -180,6 +181,7 @@ export function useOpenPiSession() {
   }
 
   const loadInitialMessages = async (threadId: string, sessionFile: string) => {
+    setHydratingHistoryThreadId(threadId)
     try {
       const page = await window.openpi.getSessionMessages(sessionFile, {
         limit: HISTORY_PAGE_LIMIT,
@@ -200,6 +202,8 @@ export function useOpenPiSession() {
         ...snapshot,
         error: err instanceof Error ? err.message : String(err),
       }))
+    } finally {
+      if (hydratingHistoryThreadId() === threadId) setHydratingHistoryThreadId(null)
     }
   }
 
@@ -436,6 +440,25 @@ export function useOpenPiSession() {
 
     // Initial load
     void sessionIndex.loadSessionIndex()
+    void window.openpi
+      .getBootSession()
+      .then((payload) => {
+        if (!payload || snapshots.has(payload.threadId)) return
+        const readyResult = applyThreadSessionReady(
+          snapshots.get(payload.threadId),
+          payload.threadId,
+          payload.ready
+        )
+        batch(() => {
+          commitSnapshot(payload.threadId, readyResult.snapshot)
+          setActiveThreadId(payload.threadId)
+          sessionIndex.setSelectedWorkspacePath(payload.ready.cwd)
+        })
+        void sessionIndex.loadSessionIndex(payload.ready.cwd)
+      })
+      .catch(() => {
+        // The Welcome screen remains usable when main has no active workspace.
+      })
 
     onCleanup(() => {
       for (const u of unsubs) u()
@@ -446,8 +469,19 @@ export function useOpenPiSession() {
 
   const openWorkspace = async () => {
     setError(null)
-    await window.openpi.pickWorkspace()
-    await sessionIndex.loadSessionIndex()
+    const desktop = window.openpi
+    if (!desktop?.pickWorkspace) {
+      setTransportError(
+        'The OpenPi desktop bridge is unavailable. Close this window and launch OpenPi through Electron, not the Vite browser page.'
+      )
+      return
+    }
+    try {
+      await desktop.pickWorkspace()
+      await sessionIndex.loadSessionIndex()
+    } catch (err) {
+      setTransportError(err instanceof Error ? err.message : String(err))
+    }
   }
 
   const openExistingSession = async (session: SessionListItem) => {
@@ -832,6 +866,9 @@ export function useOpenPiSession() {
     },
     get isLoadingOlderHistory() {
       return selectedSnapshot()?.isLoadingOlderHistory ?? false
+    },
+    get isHydratingHistory() {
+      return hydratingHistoryThreadId() === activeThreadId()
     },
 
     // ── Extension tracker state ─────────────────────────────────────

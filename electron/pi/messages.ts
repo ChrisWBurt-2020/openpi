@@ -30,6 +30,8 @@ interface SidecarMessageDeps {
   onRunEvent?: (threadId: string, event: Record<string, unknown>) => void
   onRunControl?: (threadId: string, event: RunControlEvent) => void
   onRunWorkerLost?: (threadId: string, reason: string) => void
+  onSessionErrorObserved?: (threadId: string, message: string, code?: string) => void
+  onReviewChanged?: (cwd: string) => void
   /** Injectable for tests; defaults to a fresh gate per handler. */
   epochGate?: SessionEpochGate
 }
@@ -117,16 +119,17 @@ export function createSidecarMessageHandler(deps: SidecarMessageDeps) {
         const window = deps.getMainWindow()
         window?.webContents.send(IPC.SESSION_EVENT, { threadId, event })
 
+        if (event.type === 'tool_execution_start' || event.type === 'tool_execution_end') {
+          const cwd = deps.resolveThreadCwd?.(threadId) ?? deps.resolveActiveCwd()
+          captureAgentReviewEvent(cwd, event)
+          if (cwd && event.type === 'tool_execution_end') deps.onReviewChanged?.(cwd)
+        }
+
         // Background streams reach the renderer, but foreground-only services
         // must remain owned by the thread the user is currently viewing.
         if (!isForeground) return
 
         setAgentReviewWindow(window)
-        if (event.type === 'tool_execution_start' || event.type === 'tool_execution_end') {
-          const cwd = deps.resolveThreadCwd?.(threadId) ?? deps.resolveActiveCwd()
-          captureAgentReviewEvent(cwd, event)
-        }
-
         if (event.type === 'agent_settled') {
           setTimeout(() => {
             void deps.refreshSessionIndex()
@@ -187,6 +190,7 @@ export function createSidecarMessageHandler(deps: SidecarMessageDeps) {
         return
 
       case 'session_error':
+        deps.onSessionErrorObserved?.(threadId, msg.message, msg.code)
         recordDiagnostic({
           level: 'error',
           area: 'sidecar',
@@ -232,6 +236,7 @@ export function createSidecarMessageHandler(deps: SidecarMessageDeps) {
         return
 
       case 'error':
+        deps.onSessionErrorObserved?.(threadId, msg.message)
         recordDiagnostic({
           level: 'error',
           area: 'sidecar',

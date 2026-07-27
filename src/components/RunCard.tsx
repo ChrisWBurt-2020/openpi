@@ -1,6 +1,8 @@
 import { CirclePause, CirclePlay, LoaderCircle, Square, TriangleAlert } from 'lucide-solid'
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from 'solid-js'
 import type { RunState } from '../lib/runs'
+import { HeronLoader } from './companion/HeronLoader'
+import { StatusMark, type StatusMarkKind } from './companion/StatusMark'
 
 interface RunCardProps {
   threadId: string | null
@@ -16,6 +18,15 @@ function labelFor(run: RunState): string {
   if (run.lifecycle === 'terminal') return run.terminalReason ?? 'Finished'
   if (run.lifecycle === 'continuation_queued') return 'Continuing'
   return run.phase ? `${run.phase[0]?.toUpperCase() ?? ''}${run.phase.slice(1)}` : run.lifecycle
+}
+
+function statusFor(run: RunState): StatusMarkKind | null {
+  if (run.lifecycle === 'terminal' && run.terminalReason === 'failed') return 'error'
+  if (run.lifecycle === 'waiting' && run.waitingReason === 'user_input') return 'blocked'
+  if (run.lifecycle === 'terminal' && run.reviewState === 'ready') return 'review'
+  if (run.recoveryNotice || run.lifecycle === 'waiting') return 'warning'
+  if (run.lifecycle === 'terminal') return 'success'
+  return null
 }
 
 export function RunCard(props: RunCardProps) {
@@ -69,10 +80,18 @@ export function RunCard(props: RunCardProps) {
         >
           <header>
             <span class="run-card-title">
-              <LoaderCircle
-                classList={{ 'run-card-spin': active.lifecycle === 'active' }}
-                size={15}
-              />
+              <Show
+                when={statusFor(active)}
+                fallback={
+                  active.lifecycle === 'active' ? (
+                    <HeronLoader phase="operation" compact />
+                  ) : (
+                    <LoaderCircle size={15} />
+                  )
+                }
+              >
+                {(kind) => <StatusMark kind={kind()} decorative />}
+              </Show>
               Run <em>Experimental</em>
             </span>
             <strong>{labelFor(active)}</strong>
@@ -98,13 +117,16 @@ export function RunCard(props: RunCardProps) {
           </Show>
           <Show when={active.recoveryNotice}>
             <p class="run-card-notice">
-              <TriangleAlert size={14} /> {active.recoveryNotice}
+              <StatusMark kind="warning" decorative /> <TriangleAlert size={14} />{' '}
+              {active.recoveryNotice}
             </p>
           </Show>
           <Show when={active.pendingInput}>
             {(input) => (
               <div class="run-card-input">
-                <strong>{input().question}</strong>
+                <strong>
+                  <StatusMark kind="blocked" decorative /> {input().question}
+                </strong>
                 <p>{input().reason}</p>
                 <div class="run-card-options">
                   <For each={input().options ?? []}>
@@ -141,6 +163,7 @@ export function RunCard(props: RunCardProps) {
           </Show>
           <Show when={active.reviewState === 'ready'}>
             <div class="run-card-review">
+              <StatusMark kind="review" decorative />
               <button
                 type="button"
                 onClick={() => document.dispatchEvent(new Event('openpi:open-review'))}

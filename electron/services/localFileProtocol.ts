@@ -3,11 +3,23 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { net, protocol } from 'electron'
 import { isPathInside } from './shellEnv'
+import type { PetPackStore } from './petPacks'
 
 export function registerLocalFileScheme(): void {
   protocol.registerSchemesAsPrivileged([
     { scheme: 'localfile', privileges: { secure: true, standard: false, supportFetchAPI: false } },
+    { scheme: 'openpi-pet', privileges: { secure: true, standard: true, supportFetchAPI: false } },
   ])
+}
+
+export function handlePetProtocol(getPacks: () => PetPackStore | null): void {
+  protocol.handle('openpi-pet', (request) => {
+    const url = new URL(request.url)
+    const id = url.hostname
+    const asset = decodeURIComponent(url.pathname.replace(/^\//, ''))
+    const file = getPacks()?.resolve(id, asset)
+    return file ? net.fetch(pathToFileURL(file).toString()) : new Response('Pet asset not found', { status: 404 })
+  })
 }
 
 export function handleLocalFileProtocol(getCwd: () => string | null): void {

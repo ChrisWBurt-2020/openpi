@@ -1,9 +1,11 @@
 /**
  * RightPanel — source control + file tree tabs.
  */
-import { createSignal, Show } from 'solid-js'
+import { createSignal, onCleanup, onMount, Show } from 'solid-js'
+import type { CompanionViews } from '../../lib/companionView'
 import type { GitChangedFile, GitFileDiff, GitSyncAction } from '../../lib/ipc'
 import type { Message } from '../../types/session'
+import { CompanionPanel } from '../companion/CompanionPanel'
 import { FileTree } from '../git/FileTree'
 import { GitPanel } from '../git/GitPanel'
 import { SignalsPanel } from './SignalsPanel'
@@ -25,10 +27,18 @@ interface Props {
   onOpenHistory?: () => void
   messages: Message[]
   sessionPath: string | null
+  companions?: CompanionViews
 }
 
 export function RightPanel(props: Props) {
-  const [sidebarTab, setSidebarTab] = createSignal<'changes' | 'files' | 'signals'>('files')
+  const [sidebarTab, setSidebarTab] = createSignal<'changes' | 'files' | 'signals' | 'companion'>(
+    'files'
+  )
+  onMount(() => {
+    const open = () => setSidebarTab('companion')
+    window.addEventListener('openpi:companion-open', open)
+    onCleanup(() => window.removeEventListener('openpi:companion-open', open))
+  })
 
   return (
     <div class="rp-container" style={{ width: `${props.width}px` }}>
@@ -57,6 +67,13 @@ export function RightPanel(props: Props) {
             onClick={() => setSidebarTab('signals')}
           >
             Signals
+          </button>
+          <button
+            type="button"
+            class={`rp-sidebar-tab${sidebarTab() === 'companion' ? ' is-active' : ''}`}
+            onClick={() => setSidebarTab('companion')}
+          >
+            Heron
           </button>
         </div>
 
@@ -92,6 +109,9 @@ export function RightPanel(props: Props) {
               messages={props.messages}
               onFileClick={props.onFileClick}
             />
+          </Show>
+          <Show when={sidebarTab() === 'companion'}>
+            <CompanionPanel view={Object.values(props.companions ?? {}).find((view) => view.projectPath === props.cwd)} />
           </Show>
         </div>
       </Show>

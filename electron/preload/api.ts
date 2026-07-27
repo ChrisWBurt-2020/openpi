@@ -1,3 +1,4 @@
+import { companionApi } from './companion'
 import { eventsApi } from './events'
 import { gitApi } from './git'
 import { remoteApi } from './remote'
@@ -14,4 +15,5 @@ export const api = {
   ...remoteApi,
   ...runsApi,
   ...eventsApi,
+  ...companionApi,
 } as const

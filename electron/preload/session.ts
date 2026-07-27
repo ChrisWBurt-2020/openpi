@@ -19,6 +19,7 @@ import type {
   SessionStats,
   SessionTreeResponse,
   SetModel,
+  ThreadSessionReady,
   UsageSummary,
   UsageSummaryRequest,
   WorkspaceInfo,
@@ -51,6 +52,8 @@ export const sessionApi = {
   setModel: (payload: SetModel): Promise<void> => ipcRenderer.invoke(IPC.SET_MODEL, payload),
   setThinking: (level: string): Promise<void> => ipcRenderer.invoke(IPC.SET_THINKING, { level }),
   getSessionStats: (): Promise<SessionStats> => ipcRenderer.invoke(IPC.GET_SESSION_STATS),
+  getBootSession: (): Promise<ThreadSessionReady | null> =>
+    ipcRenderer.invoke(IPC.GET_BOOT_SESSION),
   getUsageSummary: (request?: UsageSummaryRequest): Promise<UsageSummary> =>
     ipcRenderer.invoke(IPC.GET_USAGE_SUMMARY, request),
 

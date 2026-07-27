@@ -127,6 +127,26 @@ export function registerSessionsIpc(deps: SessionsIpcDeps): void {
 
   deps.ipcMain.handle(IPC.GET_OUTPUT_BUFFER, (): OutputLine[] => [...deps.outputBuffer])
 
+  // SESSION_READY can be emitted during BrowserWindow did-finish-load, before
+  // the renderer's subscription hook has mounted. Give the renderer a
+  // read-only main-process snapshot so startup cannot strand it on Welcome.
+  deps.ipcMain.handle(IPC.GET_BOOT_SESSION, () => {
+    const state = deps.getSessionState()
+    const cwd = state?.cwd ?? deps.activeWorkspacePath()
+    if (!cwd) return null
+    return {
+      threadId: state?.threadId ?? 'bootstrap',
+      ready: deps.normalizeSessionReady({
+        cwd,
+        sessionFile: state?.sessionFile ?? null,
+        sessionId: state?.sessionId ?? null,
+        sessionName: null,
+        model: null,
+        thinkingLevel: null,
+      }),
+    }
+  })
+
   deps.ipcMain.handle(IPC.PICK_WORKSPACE, async () => {
     const mainWindow = deps.getMainWindow()
     if (!mainWindow) return { cancelled: true }
@@ -142,7 +162,9 @@ export function registerSessionsIpc(deps: SessionsIpcDeps): void {
     try {
       await deps.startSession(workspacePath)
     } catch (err) {
-      deps.emitSessionError(err instanceof Error ? err.message : String(err))
+      const message = err instanceof Error ? err.message : String(err)
+      deps.emitSessionError(message)
+      throw new Error(`Couldn't open ${workspacePath}: ${message}`)
     }
     return { cancelled: false, path: workspacePath }
   })

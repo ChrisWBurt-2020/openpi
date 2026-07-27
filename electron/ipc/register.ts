@@ -9,6 +9,9 @@ import { checkPiUpdate, installPiUpdate } from '../pi/updater'
 import type { RemoteConnectionManager } from '../remote/connectionManager'
 import { registerRunsIpc } from '../runs/ipc'
 import type { RunManager } from '../runs/manager'
+import type { CompanionProjector } from '../services/companionProjector'
+import type { PetPackStore } from '../services/petPacks'
+import type { CompanionWindows } from '../services/companionWindows'
 import type * as CustomizationsHost from '../services/customizations'
 import type * as FffHost from '../services/fffHost'
 import { emitSessionError, playSoundEffectId } from '../services/notificationHost'
@@ -48,6 +51,7 @@ import {
 import type { SessionIndexStore } from '../session/sessionIndex'
 import { threadCwdRegistry } from '../session/threadCwd'
 import { registerAgentReviewIpc } from './agentReview'
+import { registerCompanionIpc } from './companion'
 import { registerCustomizationsIpc } from './customizations'
 import { registerDiagnosticsIpc } from './diagnostics'
 import { registerFileIpc } from './files'
@@ -91,6 +95,12 @@ interface RegisterMainIpcHandlersDeps {
   ) => Promise<T>
   sendSidecar: (message: SidecarCommand) => void
   getRunManager?: () => RunManager | null
+  getCompanionProjector?: () => CompanionProjector | null
+  showSiege?: () => void
+  getCompanionWindows?: () => CompanionWindows | null
+  activateCompanionProject?: (projectPath: string) => void
+  openCompanionEvidence?: (projectPath: string, evidenceUri: string) => void
+  getPetPacks?: () => PetPackStore | null
 }
 
 async function getCommitAgentContext(
@@ -145,6 +155,20 @@ export function registerMainIpcHandlers(deps: RegisterMainIpcHandlersDeps): void
     getRemoteConnections: deps.getRemoteConnections,
   })
   registerRunsIpc({ ipcMain: deps.ipcMain, getRunManager: deps.getRunManager ?? (() => null) })
+  registerCompanionIpc({
+    ipcMain: deps.ipcMain,
+    getProjector: deps.getCompanionProjector ?? (() => null),
+    showSiege: deps.showSiege ?? (() => undefined),
+    activateProject: deps.activateCompanionProject ?? (() => undefined),
+    showPetMenu: (event, projectPath) =>
+      deps.getCompanionWindows?.()?.showPetMenu(event, projectPath),
+    setPetPointerInteractive: (event, projectPath, interactive) =>
+      deps.getCompanionWindows?.()?.setPetPointerInteractive(event, projectPath, interactive),
+    openEvidence: deps.openCompanionEvidence ?? (() => undefined),
+    getPetPacks: deps.getPetPacks ?? (() => null),
+    setPetExpanded: (event, projectPath, expanded) =>
+      deps.getCompanionWindows?.()?.setPetExpanded(event, projectPath, expanded),
+  })
   registerSoundIpc({ ipcMain: deps.ipcMain, playSoundEffectId })
   registerWorkbenchIpc({
     ipcMain: deps.ipcMain,

@@ -2,7 +2,7 @@ import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, Tray } from 'electron'
 import type { GitStatusResult, OutputLine } from '../src/lib/ipc'
 import { IPC } from '../src/lib/ipc'
 import { registerMainIpcHandlers } from './ipc/register'
@@ -12,9 +12,18 @@ import { checkPiUpdate } from './pi/updater'
 import { RemoteConnectionManager } from './remote/connectionManager'
 import { RunManager } from './runs/manager'
 import { RunStore } from './runs/store'
+import { getAgentReviewSummary } from './services/agentReview'
 import { startArtifactWatcher } from './services/artifactWatcher'
+import { CompanionProjector } from './services/companionProjector'
+import { CompanionStore } from './services/companionStore'
+import { CompanionWindows } from './services/companionWindows'
 import { recordDiagnosticError } from './services/diagnostics'
-import { handleLocalFileProtocol, registerLocalFileScheme } from './services/localFileProtocol'
+import {
+  handleLocalFileProtocol,
+  handlePetProtocol,
+  registerLocalFileScheme,
+} from './services/localFileProtocol'
+import { PetPackStore } from './services/petPacks'
 import {
   ensureFffInitialized,
   getCustomizationsHost,
@@ -42,7 +51,6 @@ import {
   applySessionReady,
   clearSessionState,
   createRequestId,
-  ensurePiSidecarStarted,
   getPiSidecarHost,
   getSessionState,
   isForegroundThread,
@@ -76,6 +84,7 @@ enrichPathFromLoginShell()
 
 app.setName('OpenPi')
 app.setAppUserModelId('dev.openpi.app')
+if (!app.requestSingleInstanceLock()) app.quit()
 
 async function confirmHighRiskMutation(options: {
   title: string
@@ -105,6 +114,12 @@ let mainWindow: BrowserWindow | null = null
 let sessionIndex: SessionIndexStore | null = null
 let remoteConnections: RemoteConnectionManager | null = null
 let runManager: RunManager | null = null
+let companionProjector: CompanionProjector | null = null
+let companionStore: CompanionStore | null = null
+let petPacks: PetPackStore | null = null
+let companionWindows: CompanionWindows | null = null
+let tray: Tray | null = null
+let quitting = false
 
 // ── Output ring buffer ─────────────────────────────────────────────────
 // Lines emitted before the Output pane opens are held here so they are
@@ -169,7 +184,11 @@ async function maybeCheckPiUpdateOnStartup(): Promise<void> {
 const handleSidecarMessage = createSidecarMessageHandler({
   getMainWindow: () => mainWindow,
   normalizeSessionReady,
-  applySessionReady,
+  applySessionReady: (ready, cwd, threadId) => {
+    applySessionReady(ready, cwd, threadId)
+    companionProjector?.ensure(cwd, path.basename(cwd) || cwd)
+    companionWindows?.setActive(cwd)
+  },
   refreshSessionIndex,
   resolveActiveCwd,
   resolveThreadCwd,
@@ -179,9 +198,35 @@ const handleSidecarMessage = createSidecarMessageHandler({
   getGitHost,
   emitSessionError,
   emitOutputLine,
-  onRunEvent: (threadId, event) => runManager?.onEvent(threadId, event),
+  onRunEvent: (threadId, event) => {
+    runManager?.onEvent(threadId, event)
+    const projectPath = resolveThreadCwd(threadId)
+    if (!projectPath) return
+    companionProjector?.ensure(projectPath, path.basename(projectPath) || projectPath)
+    const at = new Date().toISOString()
+    if (event.type === 'agent_start')
+      companionProjector?.setSessionActivity(projectPath, threadId, true)
+    if (event.type === 'agent_end' || event.type === 'agent_settled')
+      companionProjector?.setSessionActivity(projectPath, threadId, false)
+    if (
+      event.type === 'extension_error' ||
+      (event.type === 'auto_retry_end' && event.success === false)
+    )
+      companionProjector?.setSessionActivity(
+        projectPath,
+        threadId,
+        true,
+        String(event.message ?? event.finalError ?? 'Agent error').slice(0, 240)
+      )
+  },
   onRunControl: (threadId, event) => runManager?.onControl(threadId, event),
   onRunWorkerLost: (threadId, reason) => runManager?.onWorkerLost(threadId, reason),
+  onSessionErrorObserved: (threadId, message, code) => {
+    const projectPath = resolveThreadCwd(threadId)
+    if (!projectPath) return
+    companionProjector?.setSessionActivity(projectPath, threadId, true, message.slice(0, 240))
+  },
+  onReviewChanged: (cwd) => companionProjector?.syncReview(cwd, getAgentReviewSummary(cwd).changes),
 })
 
 // ─── IPC handlers ──────────────────────────────────────────────────────────────
@@ -210,6 +255,13 @@ function registerHandlers(): void {
       getPiSidecarHost()?.send(message)
     },
     getRunManager: () => runManager,
+    getCompanionProjector: () => companionProjector,
+    showSiege: () => companionWindows?.showSiege(),
+    getCompanionWindows: () => companionWindows,
+    activateCompanionProject: (projectPath) => companionWindows?.activateProject(projectPath),
+    openCompanionEvidence: (projectPath, evidenceUri) =>
+      companionWindows?.openEvidence(projectPath, evidenceUri),
+    getPetPacks: () => petPacks,
   })
 }
 
@@ -220,13 +272,17 @@ function createWindow(): void {
     currentDir,
     getPtyHost,
     getSessionIndex: () => sessionIndex,
-    ensurePiSidecarStarted,
     showDeferredWorkspace,
     resumeSession: (cwd: string, sessionFile: string) => startSession(cwd, { sessionFile }),
     refreshSessionIndex,
     onClosed: () => {
       mainWindow = null
     },
+  })
+  mainWindow.on('close', (event) => {
+    if (quitting) return
+    event.preventDefault()
+    mainWindow?.hide()
   })
 }
 
@@ -241,14 +297,27 @@ app.whenReady().then(() => {
   if (process.platform === 'darwin') app.dock?.setIcon(dockIconPath())
 
   handleLocalFileProtocol(() => getSessionState()?.cwd ?? null)
+  handlePetProtocol(() => petPacks)
 
   sessionIndex = new SessionIndexStore(path.join(app.getPath('userData'), 'openpi.sqlite'))
+  companionStore = new CompanionStore(path.join(app.getPath('userData'), 'openpi-companion.sqlite'))
+  petPacks = new PetPackStore(path.join(app.getPath('userData'), 'pets'))
+  companionProjector = new CompanionProjector(companionStore)
+  for (const workspace of sessionIndex.listWorkspaces()) {
+    companionProjector.ensure(workspace.path, workspace.displayName)
+    companionProjector.syncReview(workspace.path, getAgentReviewSummary(workspace.path).changes)
+  }
   remoteConnections = new RemoteConnectionManager(sessionIndex)
   const runStore = new RunStore(path.join(app.getPath('userData'), 'openpi-runs.sqlite'))
   runStore.releaseRestartedRuns()
-  runManager = new RunManager(runStore, sendToThread, (state) =>
+  runManager = new RunManager(runStore, sendToThread, (state) => {
     mainWindow?.webContents.send(IPC.RUN_CHANGED, state)
-  )
+    companionProjector?.ensure(
+      state.workspacePath,
+      path.basename(state.workspacePath) || state.workspacePath
+    )
+    companionProjector?.syncRun(state)
+  })
   setSessionIndex(sessionIndex)
   setSessionHostSessionIndex(sessionIndex)
   setSessionHostRemoteConnections(remoteConnections)
@@ -277,8 +346,41 @@ app.whenReady().then(() => {
 
   registerHandlers()
   createWindow()
+  void remoteConnections.reconnectSaved()
+  companionProjector?.rehydrate(runManager.list())
+  if (companionProjector)
+    companionWindows = new CompanionWindows({
+      currentDir,
+      projector: companionProjector,
+      getMainWindow: () => mainWindow,
+      activateProject: (projectPath) => showDeferredWorkspace(projectPath),
+    })
   setMainWindow(mainWindow)
   setSessionHostMainWindow(mainWindow)
+  tray = new Tray(dockIconPath())
+  tray.setToolTip('OpenPi Heron Siege')
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: 'Open OpenPi',
+        click: () => {
+          mainWindow?.show()
+          mainWindow?.focus()
+        },
+      },
+      { label: 'Show Herons', click: () => companionWindows?.showAll() },
+      { label: 'Hide Herons', click: () => companionWindows?.hideAll() },
+      { label: 'Show Siege', click: () => companionWindows?.showSiege() },
+      { type: 'separator' },
+      {
+        label: 'Quit OpenPi',
+        click: () => {
+          quitting = true
+          app.quit()
+        },
+      },
+    ])
+  )
 
   // ── Auto-updater ─────────────────────────────────────────────────────────
   initAutoUpdater(mainWindow)
@@ -301,8 +403,11 @@ app.whenReady().then(() => {
   app.on('before-quit', () => artifactWatcher.stop())
 })
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+app.on('window-all-closed', () => undefined)
+
+app.on('second-instance', () => {
+  mainWindow?.show()
+  mainWindow?.focus()
 })
 
 app.on('activate', () => {
@@ -310,6 +415,8 @@ app.on('activate', () => {
 })
 
 app.on('quit', () => {
+  quitting = true
+  companionWindows?.destroy()
   if (hasGitHost())
     void getGitHost().then((g) => {
       g.stopGitPoll()
@@ -321,4 +428,5 @@ app.on('quit', () => {
   clearSessionState()
   if (hasPtyHost()) void getPtyHost().then((p) => p.closeAll())
   sessionIndex?.close()
+  companionStore?.close()
 })

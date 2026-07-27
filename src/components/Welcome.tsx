@@ -1,16 +1,51 @@
 import logoUrl from '@icons/icon.svg'
 import { ExternalLink, FolderOpen } from 'lucide-solid'
 import { createEffect, createSignal, Show } from 'solid-js'
+import openProjectUrl from '../assets/companion/onboarding/onboarding-open-project-master.png?url'
+import reviewChangesUrl from '../assets/companion/onboarding/onboarding-review-changes-master.png?url'
+import workWithPiUrl from '../assets/companion/onboarding/onboarding-work-with-pi-master.png?url'
+import { HeronLoader } from './companion/HeronLoader'
 
-type WelcomeProps = {
+interface WelcomeProps {
   appName: string
   appVersionLabel: string | null
   error: string | null
-  onOpen: () => void
+  onOpen: () => Promise<void>
 }
+
+const onboardingSteps = [
+  {
+    image: openProjectUrl,
+    text: (
+      <>
+        Click <strong>Open workspace</strong> and select your project folder
+      </>
+    ),
+  },
+  {
+    image: workWithPiUrl,
+    text: <>Start chatting — Pi reads your project files and responds with full context</>,
+  },
+  {
+    image: reviewChangesUrl,
+    text: <>Review changes in the Git panel, then stage and commit</>,
+  },
+] as const
 
 export function Welcome(props: WelcomeProps) {
   const [firstRun, setFirstRun] = createSignal(false)
+  const [opening, setOpening] = createSignal(false)
+  const [selectedStep, setSelectedStep] = createSignal(0)
+
+  const openWorkspace = async () => {
+    if (opening()) return
+    setOpening(true)
+    try {
+      await props.onOpen()
+    } finally {
+      setOpening(false)
+    }
+  }
 
   createEffect(() => {
     void window.openpi.getFirstRun().then((isFirst) => setFirstRun(isFirst))
@@ -33,23 +68,28 @@ export function Welcome(props: WelcomeProps) {
             reads your project files, responds to prompts, and edits code — all with full context of
             your repository.
           </p>
-          <div class="welcome-onboarding-steps">
-            <div class="welcome-step">
-              <span class="welcome-step-num">1</span>
-              <span>
-                Click <strong>Open workspace</strong> and select your project folder
-              </span>
+          <div class="welcome-onboarding-content">
+            <div class="welcome-onboarding-steps">
+              {onboardingSteps.map((step, index) => (
+                <button
+                  type="button"
+                  classList={{
+                    'welcome-step': true,
+                    'welcome-step--selected': selectedStep() === index,
+                  }}
+                  onClick={() => setSelectedStep(index)}
+                >
+                  <span class="welcome-step-num">{index + 1}</span>
+                  <span>{step.text}</span>
+                </button>
+              ))}
             </div>
-            <div class="welcome-step">
-              <span class="welcome-step-num">2</span>
-              <span>
-                Start chatting — Pi reads your project files and responds with full context
-              </span>
-            </div>
-            <div class="welcome-step">
-              <span class="welcome-step-num">3</span>
-              <span>Review changes in the Git panel, then stage and commit</span>
-            </div>
+            <img
+              class="welcome-onboarding-art"
+              src={onboardingSteps[selectedStep()].image}
+              alt=""
+              aria-hidden="true"
+            />
           </div>
           <div class="welcome-onboarding-links">
             <a
@@ -73,9 +113,17 @@ export function Welcome(props: WelcomeProps) {
       </Show>
 
       <div class="welcome-actions">
-        <button type="button" class="button-primary" onClick={props.onOpen}>
-          <FolderOpen size={15} /> Open workspace
+        <button
+          type="button"
+          class="button-primary"
+          disabled={opening()}
+          onClick={() => void openWorkspace()}
+        >
+          <FolderOpen size={15} /> {opening() ? 'Opening workspace…' : 'Open workspace'}
         </button>
+        <Show when={opening()}>
+          <HeronLoader phase="session" compact label="Creating verified workspace session" />
+        </Show>
       </div>
 
       <Show when={props.error}>

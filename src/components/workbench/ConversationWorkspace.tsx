@@ -11,6 +11,8 @@ import type { InsightPayload } from '../../lib/insights'
 import type { GitChangedFile, GitFileDiff, ModelInfo, SkillItem } from '../../lib/ipc'
 import { isDiffPreviewTab } from '../../lib/previewTabs'
 import { Composer } from '../Composer'
+import { HeronLoader } from '../companion/HeronLoader'
+import { StatusMark } from '../companion/StatusMark'
 import { ConversationPane } from '../conversation/ConversationPane'
 import { FilePreviewPane } from '../FilePreviewPane'
 import { FileTabBar } from '../FileTabBar'
@@ -264,6 +266,20 @@ export function ConversationWorkspace(props: ConversationWorkspaceProps) {
             scrollToMessageId={props.scrollToMessageId}
           />
 
+          <Show when={props.session.isHydratingHistory}>
+            <div class="conversation-history-loading">
+              <HeronLoader phase="history" compact label="Restoring verified session history" />
+            </div>
+          </Show>
+
+          <Show when={reviewChangeCount() > 0}>
+            <button type="button" class="review-evidence-notice" onClick={props.onOpenReviewTab}>
+              <StatusMark kind="review" decorative />
+              {reviewChangeCount()} captured change{reviewChangeCount() === 1 ? '' : 's'} ready for
+              review
+            </button>
+          </Show>
+
           <div class="widget-tray">
             <SubagentWidget tasks={props.session.tasks} />
             <SubagentFileWidget
@@ -293,6 +309,7 @@ export function ConversationWorkspace(props: ConversationWorkspaceProps) {
           <Show when={props.session.error}>
             {(getErr) => (
               <div class="error-toast">
+                <StatusMark kind="error" decorative />
                 <span>{getErr()}</span>
                 <button type="button" onClick={() => props.session.setError(null)}>
                   ×
@@ -312,7 +329,10 @@ export function ConversationWorkspace(props: ConversationWorkspaceProps) {
               >
                 <span>
                   <span class="subagent-notification-icon">
-                    {notif().status === 'completed' ? '✓' : '✗'}
+                    <StatusMark
+                      kind={notif().status === 'completed' ? 'success' : 'error'}
+                      decorative
+                    />
                   </span>
                   {notif().status === 'completed' ? 'Task complete' : 'Task failed'}:{' '}
                   {notif().description}

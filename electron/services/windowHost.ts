@@ -17,7 +17,6 @@ interface CreateWindowOptions {
   currentDir: string
   getPtyHost: () => Promise<PtyHostInstance>
   getSessionIndex: () => SessionIndexStore | null
-  ensurePiSidecarStarted: () => unknown
   showDeferredWorkspace: (workspacePath: string) => void
   /** Reopen a specific session on boot. See resolveBootTarget(). */
   resumeSession: (cwd: string, sessionFile: string) => Promise<void>
@@ -101,6 +100,12 @@ export function createMainWindow(options: CreateWindowOptions): BrowserWindow {
   if (saved.isFullScreen) mainWindow.setFullScreen(true)
   attachWindowStateSaver(mainWindow)
 
+  // Preload failures otherwise appear only in DevTools, leaving the renderer
+  // looking healthy while its entire privileged API is missing.
+  mainWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
+    console.error(`[preload] ${preloadPath}: ${error.message}`, error)
+  })
+
   mainWindow.webContents.on('before-input-event', (_event, input) => {
     if (input.key.toLowerCase() === 'f' && (input.meta || input.control)) {
       mainWindow.webContents.send(IPC.FILE_FIND_SHORTCUT)
@@ -119,7 +124,6 @@ export function createMainWindow(options: CreateWindowOptions): BrowserWindow {
   applyNavigationPolicy(mainWindow, appUrl)
 
   mainWindow.webContents.once('did-finish-load', () => {
-    options.ensurePiSidecarStarted()
     void options.getPtyHost().then((pty) => pty.setSender(mainWindow.webContents))
 
     mainWindow.webContents.send(IPC.SESSION_INDEX_UPDATED)

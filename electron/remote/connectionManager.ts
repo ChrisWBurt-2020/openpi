@@ -43,6 +43,19 @@ function profileKey(
   return `${profile.username.toLowerCase()}@${profile.host.toLowerCase()}:${profile.port}:${profile.identityFile ?? ''}`
 }
 
+/** Prefer the profile that can actually establish the shared SSH endpoint. */
+function preferredProfile(
+  current: ConnectionProfile | undefined,
+  candidate: ConnectionProfile
+): ConnectionProfile {
+  if (!current) return candidate
+  if (!current.hostKeyFingerprint && candidate.hostKeyFingerprint) return candidate
+  if (current.hostKeyFingerprint && !candidate.hostKeyFingerprint) return current
+  const currentConnected = current.lastConnectedAt ? Date.parse(current.lastConnectedAt) : 0
+  const candidateConnected = candidate.lastConnectedAt ? Date.parse(candidate.lastConnectedAt) : 0
+  return candidateConnected > currentConnected ? candidate : current
+}
+
 export class RemoteConnectionManager {
   private readonly live = new Map<string, LiveConnection>()
   private readonly listeners = new Set<(state: ConnectionState) => void>()
@@ -54,22 +67,22 @@ export class RemoteConnectionManager {
     const unique = new Map<string, ConnectionProfile>()
     for (const profile of this.store.listRemoteConnections()) {
       const key = profileKey(profile)
-      if (!unique.has(key)) unique.set(key, profile)
+      unique.set(key, preferredProfile(unique.get(key), profile))
     }
     return [...unique.values()].map((profile) => this.withState(profile))
   }
 
   create(draft: ConnectionDraft): ConnectionProfile {
-    const existing = this.store.listRemoteConnections().find(
-      (profile) =>
-        profileKey(profile) ===
-        profileKey({
-          host: draft.host.trim(),
-          username: draft.username.trim(),
-          port: draft.port,
-          identityFile: draft.identityFile?.trim() || null,
-        })
-    )
+    const key = profileKey({
+      host: draft.host.trim(),
+      username: draft.username.trim(),
+      port: draft.port,
+      identityFile: draft.identityFile?.trim() || null,
+    })
+    const existing = this.store
+      .listRemoteConnections()
+      .filter((profile) => profileKey(profile) === key)
+      .reduce<ConnectionProfile | undefined>(preferredProfile, undefined)
     if (existing) return this.update(existing.id, draft)
     const profile: ConnectionProfile = {
       id: randomUUID(),
@@ -475,6 +488,22 @@ export class RemoteConnectionManager {
     await Promise.all([...this.live.keys()].map((id) => this.disconnect(id)))
   }
 
+  /** Re-establish trusted saved connections after an OpenPi restart. */
+  async reconnectSaved(): Promise<void> {
+    const profiles = this.store
+      .listRemoteConnections()
+      .filter((profile) => profile.hostKeyFingerprint !== null)
+    await Promise.all(
+      profiles.map(async (profile) => {
+        try {
+          await this.connect(profile.id)
+        } catch (error) {
+          recordDiagnosticError('ssh', 'reconnect_failed', error, { connectionId: profile.id })
+        }
+      })
+    )
+  }
+
   async connect(id: string): Promise<Client> {
     const existing = this.live.get(id)
     if (existing?.state.status === 'connected') return existing.client
@@ -482,7 +511,13 @@ export class RemoteConnectionManager {
     this.setState(id, 'connecting', null, null)
     const startedAt = Date.now()
     const client = new Client()
-    const config = sshConfig(profile, (value) => this.observedFingerprints.set(profile.id, value))
+    let config: ReturnType<typeof sshConfig>
+    try {
+      config = sshConfig(profile, (value) => this.observedFingerprints.set(profile.id, value))
+    } catch (error) {
+      this.setState(id, 'error', null, messageForError(error))
+      throw error
+    }
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(
         () => reject(new Error('SSH connection timed out')),
