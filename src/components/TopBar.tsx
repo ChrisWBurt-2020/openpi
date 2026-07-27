@@ -4,12 +4,15 @@
  */
 import { GitBranch, Globe2, House, MonitorCog, Plus } from 'lucide-solid'
 import { createEffect, createMemo, createSignal, For, Show } from 'solid-js'
+import type { CompanionProjectView } from '../lib/companionView'
 import type { ModelInfo, SessionListItem } from '../lib/ipc'
 import { isMacPlatform } from '../lib/shortcutFormat'
+import { HeronBadge } from './companion/HeronBadge'
 import { SessionProgressDot } from './conversation/SessionProgressDot'
 
 interface Props {
   workspaceName: string
+  companion?: CompanionProjectView
   connection?: {
     label: string
     status: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error'
@@ -181,30 +184,32 @@ export function TopBar(props: Props) {
 
         <button
           type="button"
-          class="topbar-workspace-btn no-drag"
+          class="topbar-project-identity no-drag"
           onClick={props.onOpenWorkspace}
           title="Change workspace"
         >
-          {props.workspaceName}
+          <HeronBadge view={props.companion} />
+          <span class="topbar-project-copy">
+            <strong>{props.workspaceName}</strong>
+            <Show when={props.connection}>
+              {(connection) => (
+                <span
+                  class="topbar-project-detail"
+                  title={`SSH ${connection().status} · ${connection().executionMode}`}
+                >
+                  <Globe2 size={11} />
+                  {connection().executionMode === 'ssh-workspace'
+                    ? 'Local models'
+                    : 'Remote runner'}
+                  <span class={`connection-status-dot is-${connection().status}`} />
+                  <Show when={connection().latencyMs !== null}>
+                    <small>{connection().latencyMs}ms</small>
+                  </Show>
+                </span>
+              )}
+            </Show>
+          </span>
         </button>
-
-        <Show when={props.connection}>
-          {(connection) => (
-            <span
-              class="topbar-connection-chip"
-              title={`SSH ${connection().status} · ${connection().executionMode}`}
-            >
-              <Globe2 size={11} />
-              {connection().executionMode === 'ssh-workspace'
-                ? `Local models · ${connection().label}`
-                : `Remote runner · ${connection().label}`}
-              <span class={`connection-status-dot is-${connection().status}`} />
-              <Show when={connection().latencyMs !== null}>
-                <small>{connection().latencyMs}ms</small>
-              </Show>
-            </span>
-          )}
-        </Show>
 
         <Show when={props.gitBranch}>
           {(getBranch) => (

@@ -30,10 +30,12 @@ import { useAppArchive } from './hooks/useAppArchive'
 import { useAppFileManager } from './hooks/useAppFileManager'
 import { useAppKeybindings } from './hooks/useAppKeybindings'
 import { useAppPrefs } from './hooks/useAppPrefs'
+import { useNavigatorLayout } from './hooks/useNavigatorLayout'
 import { useOpenPiSession } from './hooks/useOpenPiSession'
 import { useWorkbenchLayout } from './hooks/useWorkbenchLayout'
+import type { CompanionViews } from './lib/companionView'
 import { DEFAULT_DISPLAY_PREFERENCES, type DisplayPreferences } from './lib/displayPreferences'
-import type { AppInfo, GitSyncAction, SessionListItem } from './lib/ipc'
+import type { AppInfo, ConnectionState, GitSyncAction, SessionListItem } from './lib/ipc'
 import type { KeybindingOverrides } from './lib/keybindings'
 
 export default function App() {
@@ -50,6 +52,46 @@ export default function App() {
   const [rightPanelOpen, setRightPanelOpen] = createSignal(true)
   const [scrollToMessageId, _setScrollToMessageId] = createSignal<string | null>(null)
   const [homescreenOpen, setHomescreenOpen] = createSignal(false)
+  const [companions, setCompanions] = createSignal<CompanionViews>({})
+  const [connectionStates, setConnectionStates] = createSignal<Record<string, ConnectionState>>({})
+
+  onMount(() => {
+    void window.openpi.connections
+      .list()
+      .then((connections) => {
+        setConnectionStates(
+          Object.fromEntries(
+            connections.map((connection) => [
+              connection.id,
+              {
+                connectionId: connection.id,
+                status: connection.status,
+                latencyMs: connection.latencyMs,
+                error: connection.lastError,
+              },
+            ])
+          )
+        )
+      })
+      .catch(() => undefined)
+    const unlistenConnection = window.openpi.connections.onStatus((state) => {
+      setConnectionStates((previous) => ({ ...previous, [state.connectionId]: state }))
+    })
+    void window.openpi.companion
+      .list()
+      .then(setCompanions)
+      .catch(() => {})
+    const unlistenChanged = window.openpi.companion.onChanged(setCompanions)
+    const unlistenOpen = window.openpi.companion.onOpen((request) => {
+      setRightPanelOpen(true)
+      window.dispatchEvent(new CustomEvent('openpi:companion-open', { detail: request }))
+    })
+    return () => {
+      unlistenConnection()
+      unlistenChanged()
+      unlistenOpen()
+    }
+  })
   // Thread rail. Persisted so it survives a restart — a sidebar that forgets
   // it was open is its own small annoyance. Defaults to shown, because being
   // unable to find your other chats is the problem it exists to solve.
@@ -73,6 +115,7 @@ export default function App() {
     resizeRightPanel,
     resizePreview,
   } = useWorkbenchLayout()
+  const navigatorLayout = useNavigatorLayout()
   const {
     attachedFiles,
     lineComments,
@@ -176,15 +219,19 @@ export default function App() {
   const [appInfo, setAppInfo] = createSignal<AppInfo | null>(null)
   const appPrefs = useAppPrefs({ setAppInfo, setDisplayPreferences, setCustomKeybindings })
   const appName = createMemo(() => appInfo()?.name ?? 'OpenPi')
+  const activeCompanion = createMemo(() =>
+    Object.values(companions()).find((view) => view.projectPath === session.selectedWorkspacePath)
+  )
   const selectedConnection = createMemo(() => {
     const workspace = session.workspaces.find((item) => item.path === session.selectedWorkspacePath)
     if (workspace?.location?.kind !== 'ssh' || !workspace.connectionLabel) return null
     const executionMode: 'ssh-workspace' | 'persistent-runner' =
       workspace.executionMode === 'ssh-workspace' ? 'ssh-workspace' : 'persistent-runner'
+    const state = connectionStates()[workspace.location.connectionId]
     return {
       label: workspace.connectionLabel,
-      status: workspace.connectionStatus ?? 'disconnected',
-      latencyMs: null,
+      status: state?.status ?? workspace.connectionStatus ?? 'disconnected',
+      latencyMs: state?.latencyMs ?? null,
       executionMode,
     }
   })
@@ -349,6 +396,7 @@ export default function App() {
             />
             <TopBar
               workspaceName={workspaceName()}
+              companion={activeCompanion()}
               connection={selectedConnection()}
               gitBranch={session.gitBranch}
               gitStats={session.gitStats}
@@ -438,6 +486,10 @@ export default function App() {
                       workspaces={session.workspaces}
                       activeSessionPath={activeSessionPath()}
                       runningSessionPaths={session.runningSessionPaths}
+                      connectionStates={Object.fromEntries(
+                        Object.entries(connectionStates()).map(([id, state]) => [id, state.status])
+                      )}
+                      width={navigatorLayout.width()}
                       onSelectSession={(path: string) =>
                         void session.openExistingSession({ path } as SessionListItem)
                       }
@@ -445,6 +497,23 @@ export default function App() {
                       onSelectWorkspace={(path: string) => void session.selectWorkspace(path)}
                       onOpenWorkspace={() => void session.openWorkspace()}
                       onCollapse={() => setThreadSidebar(false)}
+                      companions={companions()}
+                      onShowSiege={() => void window.openpi.companion.showSiege()}
+                    />
+                    <div
+                      class="navigator-resize-handle"
+                      role="separator"
+                      aria-label="Resize project navigator"
+                      aria-orientation="vertical"
+                      aria-valuemin={264}
+                      aria-valuemax={380}
+                      aria-valuenow={navigatorLayout.width()}
+                      tabIndex={0}
+                      onPointerDown={navigatorLayout.startResize}
+                      onKeyDown={(event) => {
+                        if (event.key === 'ArrowLeft') navigatorLayout.resizeBy(-8)
+                        if (event.key === 'ArrowRight') navigatorLayout.resizeBy(8)
+                      }}
                     />
                   </Show>
 
@@ -540,6 +609,7 @@ export default function App() {
                       onOpenHistory={openGitHistory}
                       messages={conversationMessages()}
                       sessionPath={activeSessionPath()}
+                      companions={companions()}
                     />
                   </Show>
                 </div>
